@@ -1,0 +1,62 @@
+/* Container styles */
+.container {
+  max-width: 480px;
+  margin: 40px auto;
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Heading */
+h1 {
+  text-align: center;
+  color: #333;
+  margin-bottom: 20px;
+  font-weight: 700;
+}
+
+/* Button styles */
+button {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  background-color: #007bff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+button:hover:not(:disabled) {
+  background-color: #0056b3;
+}
+
+/* Tag data output */
+pre {
+  background: #272822;
+  color: #f8f8f2;
+  padding: 15px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin-top: 20px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+/* Error message */
+p {
+  margin-top: 16px;
+  font-weight: 600;
+  color: #dc3545;
+  text-align: center;
+}
