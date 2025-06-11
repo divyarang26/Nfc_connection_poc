@@ -24,29 +24,73 @@ import { Preferences } from '@capacitor/preferences';
 const Tab1: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [messageToSend, setMessageToSend] = useState('hello divya');
+  // Set the default message here
+  const [messageToSend, setMessageToSend] = useState('NFC Data Transferred Successfully!');
   const [isHCEActive, setIsHCEActive] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('HCE not started');
 
+  // Load initial message from preferences when component mounts
   useEffect(() => {
-    // Set up HCE listeners when component mounts
+    const loadInitialMessage = async () => {
+      try {
+        const { value } = await Preferences.get({ key: 'nfc_message' });
+        if (value) {
+          // Capacitor Preferences store values as strings, even if they were objects
+          // The Android HostApduService expects a JSON string with a "value" key
+          // So, when reading back, we also need to parse the JSON if it's there
+          try {
+            const parsed = JSON.parse(value);
+            if (parsed && typeof parsed.value === 'string') {
+                setMessageToSend(parsed.value);
+            } else {
+                setMessageToSend(value); // Fallback for direct string storage if not JSON
+            }
+          } catch (e) {
+            // Not a JSON object, treat as plain string
+            setMessageToSend(value);
+          }
+          setToastMessage('📝 Loaded previous message.');
+          setShowToast(true);
+        }
+      } catch (error) {
+        console.error('Error loading initial message:', error);
+      }
+    };
+
+    loadInitialMessage();
+
     if (Capacitor.getPlatform() === 'android') {
       setupHCE();
     }
 
     return () => {
-      // Cleanup listeners
       Nfc.removeAllListeners();
     };
-  }, []);
+  }, []); // Empty dependency array means this runs once on mount
+
+  // This useEffect will run whenever `messageToSend` changes, and automatically update preferences.
+  // This ensures the HCE service always has the latest message without needing to click a button.
+  useEffect(() => {
+    const updatePreferences = async () => {
+      try {
+        // The Android service expects the value to be a JSON string with a "value" key.
+        // So, we stringify it here before saving.
+        await Preferences.set({
+          key: 'nfc_message',
+          value: JSON.stringify({ value: messageToSend })
+        });
+        console.log('Preferences updated with:', messageToSend);
+      } catch (error) {
+        console.error('Error updating preferences:', error);
+      }
+    };
+    updatePreferences();
+  }, [messageToSend]); // This effect runs whenever messageToSend changes
 
   const setupHCE = async () => {
     try {
-      // Store the message in SharedPreferences for HCE service to read
-      await Preferences.set({
-        key: 'nfc_message',
-        value: messageToSend
-      });
+      // We no longer need to call Preferences.set here, as the useEffect above handles it.
+      // The Android service will read the latest value when a connection is made.
 
       // Listen for when a reader connects
       await Nfc.addListener('commandReceived', async (event) => {
@@ -76,22 +120,6 @@ const Tab1: React.FC = () => {
     }
   };
 
-  const updateMessage = async () => {
-    try {
-      // Update the message in SharedPreferences
-      await Preferences.set({
-        key: 'nfc_message',
-        value: messageToSend
-      });
-      
-      setToastMessage('✅ Message updated!');
-      setShowToast(true);
-    } catch (error: any) {
-      setToastMessage(`❌ Failed to update message: ${error.message}`);
-      setShowToast(true);
-    }
-  };
-
   return (
     <IonPage>
       <IonHeader>
@@ -106,7 +134,7 @@ const Tab1: React.FC = () => {
           </IonCardHeader>
           <IonCardContent>
             <IonItem>
-              <IonLabel position="floating">Message to send</IonLabel>
+              {/* <IonLabel position="floating">Message to send</IonLabel> */}
               <IonInput
                 value={messageToSend}
                 onIonChange={e => setMessageToSend(e.detail.value!)}
@@ -114,19 +142,11 @@ const Tab1: React.FC = () => {
               />
             </IonItem>
 
-            <IonButton 
-              expand="block" 
-              onClick={updateMessage}
-              style={{ marginTop: '20px' }}
-            >
-              Update Message
-            </IonButton>
-
             <div style={{ marginTop: '20px', textAlign: 'center' }}>
               <IonText color={isHCEActive ? 'success' : 'medium'}>
                 <p><strong>Status:</strong> {connectionStatus}</p>
               </IonText>
-              
+
               {isHCEActive && (
                 <IonText color="primary">
                   <p style={{ fontSize: '14px' }}>

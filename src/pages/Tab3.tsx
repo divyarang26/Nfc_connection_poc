@@ -47,25 +47,52 @@ const Tab3: React.FC = () => {
       setScannedText('');
       setDebugInfo([]);
 
+      // Prevents multiple listener registrations (avoids duplication bugs).
       await Nfc.removeAllListeners();
 
+      // Adds a listener for when a tag/device is detected
       await Nfc.addListener('nfcTagScanned', async (event) => {
         addDebugInfo('NFC device detected');
         addDebugInfo(`Tech types: ${JSON.stringify(event.nfcTag.techTypes)}`);
         setConnectionStatus('Phone detected! Connecting...');
 
         try {
+          // Stops scanning (we found our tag) and waits briefly before connecting
+//           If you don't stop it, the scan session might:
+// Interfere with Nfc.connect()
+// Keep detecting other tags or retrying
+// Cause bugs like duplicated connections or crashes
           await Nfc.stopScanSession();
+//Pauses the execution for 100 milliseconds after stopping the scan session.
+// It’s a small "cool-down" delay to let the NFC hardware settle before trying to connect with the detected tag.
           await new Promise(resolve => setTimeout(resolve, 100));
+
+
+          // What is techTypes?
+          // techTypes is an array of strings describing the NFC protocols (technologies) that the scanned tag supports.
+          
+          // Each string represents a type of communication technology, like:
+          
+          // "Ndef" – NDEF data format (used by typical NFC cards and stickers)
+          
+          // "IsoDep" – ISO 14443-4 protocol (used by secure cards and HCE services)
+          
+          // "MifareClassic" or "MifareUltralight" – specific NFC chip families
+          
+          // "NfcA", "NfcB" – low-level protocols
 
           const techTypes = event.nfcTag.techTypes || [];
           
+
+          // Only continues on Android, and only if the device supports ISO-DEP (required for HCE).
+
           if (Capacitor.getPlatform() === 'android') {
             if (!techTypes.includes(NfcTagTechType.IsoDep)) {
               throw new Error('ISO-DEP not supported');
             }
 
             // Connect to the HCE service
+            // Opens connection to the other phone using ISO-DEP protocol.
             await Nfc.connect({ techType: NfcTagTechType.IsoDep });
             addDebugInfo('Connected to ISO-DEP');
 
@@ -74,10 +101,12 @@ const Tab3: React.FC = () => {
             
             // Approach 1: Try with the first AID
             try {
+              // Selects the AID registered by the other phone’s HCE service.
               const selectResponse1 = await selectApplication('F0010203040506');
               addDebugInfo(`SELECT AID1 response: ${arrayToHex(selectResponse1.response)}`);
               
               if (isSuccessResponse(selectResponse1)) {
+                // If AID is accepted, request data and decode the message.
                 const dataResponse = await getData();
                 addDebugInfo(`GET DATA response: ${arrayToHex(dataResponse.response)}`);
                 
