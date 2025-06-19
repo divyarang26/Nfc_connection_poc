@@ -19,3 +19,6 @@ project(':capacitor-status-bar').projectDir = new File('../node_modules/@capacit
 
 include ':capawesome-team-capacitor-nfc'
 project(':capawesome-team-capacitor-nfc').projectDir = new File('../node_modules/@capawesome-team/capacitor-nfc/android')
+
+include ':passkeyme-ionic-cap-plugin'
+project(':passkeyme-ionic-cap-plugin').projectDir = new File('../node_modules/passkeyme-ionic-cap-plugin/android')

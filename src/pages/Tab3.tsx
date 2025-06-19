@@ -1,5 +1,5 @@
 // src/pages/NFCRead.tsx (Tab3.tsx)
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   IonPage,
   IonHeader,
@@ -17,6 +17,9 @@ import {
 } from '@ionic/react';
 import { Nfc, NfcTagTechType, PollingOption } from '@capawesome-team/capacitor-nfc';
 import { Capacitor } from '@capacitor/core';
+import axios from "axios";
+import { PasskeymeSDK } from 'passkeyme-ionic-cap-plugin';
+
 
 const Tab3: React.FC = () => {
   const [scannedText, setScannedText] = useState('');
@@ -25,6 +28,10 @@ const Tab3: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('');
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
+
+  const API_URL = "https://passkeyme.com";
+const APP_UUID = "cad7760b-3ee4-4df8-b7b4-73cdeaff0774";
+const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
 
   useEffect(() => {
     return () => {
@@ -162,6 +169,12 @@ const Tab3: React.FC = () => {
 
             if (message) {
               setScannedText(message);
+              let username = "divya"
+              console.log("log ~ :182 ~ awaitNfc.addListener ~ message:", message)
+              // const { credential } = await PasskeymeSDK.passkeyRegister({ challenge: message });
+              // console.log("log ~ :175 ~ awaitNfc.addListener ~ credential:", credential)
+              // let completionresponse = await client.post(`/complete_registration`, { username, credential });
+              // console.log("log ~ :176 ~ awaitNfc.addListener ~ completionresponse:", completionresponse)
               setToastMessage(`✅ Successfully read: "${message}"`);
               setConnectionStatus('Data received successfully!');
             } else {
@@ -176,6 +189,7 @@ const Tab3: React.FC = () => {
           addDebugInfo(`Error: ${error.message}`);
           setToastMessage(`❌ Error: ${error.message}`);
           setConnectionStatus('Communication failed');
+          console.log("log ~ :191 ~ awaitNfc.addListener ~ error.message:", error.message)
           
           try {
             await Nfc.close();
@@ -206,6 +220,54 @@ const Tab3: React.FC = () => {
       setIsLoading(false);
       setToastMessage(`❌ Failed to start scan: ${err.message}`);
       setShowToast(true);
+    }
+  };
+  const client = useMemo(() => {
+    return axios.create({
+      baseURL: `${API_URL}/webauthn/${APP_UUID}`,
+      headers: {
+        "x-api-key": API_KEY,
+        "Content-Type": "application/json",
+      },
+    });
+  }, []);
+
+  const handleRegister = async () => {
+   
+  
+    try {
+      setIsLoading(true);
+  
+      const displayName = "divya"; // Use entered username
+      const username = "divya";
+      const startRes = await client.post("/start_registration", {
+        username,
+        displayName,
+      });
+      console.log("log ~ :239 ~ handleRegister ~ startRes:", startRes)
+  
+      const { credential } = await PasskeymeSDK.passkeyRegister({
+        challenge: startRes.data.challenge,
+      });
+      console.log("log ~ :243 ~ handleRegister ~ credential:", credential)
+  
+      const completeResponse = await client.post("/complete_registration", 
+        { username, credential }
+      );
+      console.log("log ~ :248 ~ handleRegister ~ completeResponse:", completeResponse)
+  
+      if (completeResponse.data.success) {
+        // Store username with credential
+        localStorage.setItem('passkey_username', username);
+        localStorage.setItem('passkey_registered', 'true');
+       
+      } else {
+        throw new Error('Registration failed on server');
+      }
+    } catch (error: any) {
+      console.error('Registration error:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -295,6 +357,9 @@ const Tab3: React.FC = () => {
         </IonToolbar>
       </IonHeader>
       <IonContent className="ion-padding">
+        <IonCard> 
+          <IonButton onClick={handleRegister}>register passkey</IonButton>
+        </IonCard>
         <IonCard>
           <IonCardHeader>
             <IonCardTitle>Read Data from Another Phone</IonCardTitle>

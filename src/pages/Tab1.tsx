@@ -1,5 +1,4 @@
-// src/pages/NFCWrite.tsx (Tab1.tsx)
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   IonPage,
   IonHeader,
@@ -13,86 +12,83 @@ import {
   IonCardHeader,
   IonCardTitle,
   IonItem,
-  IonLabel,
   IonInput,
   IonText,
 } from '@ionic/react';
 import { Nfc } from '@capawesome-team/capacitor-nfc';
-import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
+import axios from 'axios';
 
 const Tab1: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  // Set the default message here
   const [messageToSend, setMessageToSend] = useState('NFC Data Transferred Successfully!');
   const [isHCEActive, setIsHCEActive] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('HCE not started');
-
-  // Load initial message from preferences when component mounts
+  const API_URL = "https://passkeyme.com";
+  const APP_UUID = "cad7760b-3ee4-4df8-b7b4-73cdeaff0774";
+  const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
+  // Single useEffect to load saved message and cleanup listeners
   useEffect(() => {
-    const loadInitialMessage = async () => {
+    const init = async () => {
       try {
         const { value } = await Preferences.get({ key: 'nfc_message' });
         if (value) {
-          // Capacitor Preferences store values as strings, even if they were objects
-          // The Android HostApduService expects a JSON string with a "value" key
-          // So, when reading back, we also need to parse the JSON if it's there
           try {
             const parsed = JSON.parse(value);
             if (parsed && typeof parsed.value === 'string') {
-                setMessageToSend(parsed.value);
+              setMessageToSend(parsed.value);
             } else {
-                setMessageToSend(value); // Fallback for direct string storage if not JSON
+              setMessageToSend(value);
             }
-          } catch (e) {
-            // Not a JSON object, treat as plain string
+          } catch {
             setMessageToSend(value);
           }
           setToastMessage('📝 Loaded previous message.');
           setShowToast(true);
         }
       } catch (error) {
-        console.error('Error loading initial message:', error);
+        console.error('Error loading message:', error);
       }
     };
 
-    loadInitialMessage();
-
-    if (Capacitor.getPlatform() === 'android') {
-      setupHCE();
-    }
+    init();
 
     return () => {
       Nfc.removeAllListeners();
     };
-  }, []); // Empty dependency array means this runs once on mount
+  }, []);
 
-  // This useEffect will run whenever `messageToSend` changes, and automatically update preferences.
-  // This ensures the HCE service always has the latest message without needing to click a button.
-  useEffect(() => {
-    const updatePreferences = async () => {
-      try {
-        // The Android service expects the value to be a JSON string with a "value" key.
-        // So, we stringify it here before saving.
-        await Preferences.set({
-          key: 'nfc_message',
-          value: JSON.stringify({ value: messageToSend })
-        });
-        console.log('Preferences updated with:', messageToSend);
-      } catch (error) {
-        console.error('Error updating preferences:', error);
-      }
-    };
-    updatePreferences();
-  }, [messageToSend]); // This effect runs whenever messageToSend changes
+  const client = useMemo(() => {
+    return axios.create({
+      baseURL: `${API_URL}/webauthn/${APP_UUID}`,
+      headers: {
+        "x-api-key": API_KEY,
+        "Content-Type": "application/json",
+      },
+    });
+  }, []);
+  const saveMessage = async () => {
+    try {
+      const startRes = await client.post("/start_authentication", {
+        username: "divya",
+      });
+      setMessageToSend(startRes.data.challenge);
+
+      await Preferences.set({
+        key: 'nfc_message',
+        value: JSON.stringify({ value: startRes.data.challenge }),
+      });
+      console.log('Saved message:', messageToSend);
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
+  };
 
   const setupHCE = async () => {
     try {
-      // We no longer need to call Preferences.set here, as the useEffect above handles it.
-      // The Android service will read the latest value when a connection is made.
+      // await saveMessage(); // Save before starting HCE
 
-      // Listen for when a reader connects
       await Nfc.addListener('commandReceived', async (event) => {
         console.log('Command received from reader:', event.data);
         setConnectionStatus('Connected to reader!');
@@ -100,7 +96,6 @@ const Tab1: React.FC = () => {
         setShowToast(true);
       });
 
-      // Listen for when connection is lost
       await Nfc.addListener('nfcLinkDeactivated', (event) => {
         console.log('NFC link deactivated:', event.reason);
         setConnectionStatus('Disconnected - Ready for next connection');
@@ -112,7 +107,6 @@ const Tab1: React.FC = () => {
       setConnectionStatus('HCE Active - Hold phones together');
       setToastMessage('✅ HCE service is ready!');
       setShowToast(true);
-
     } catch (error: any) {
       console.error('HCE setup error:', error);
       setToastMessage(`❌ HCE setup failed: ${error.message}`);
@@ -134,13 +128,18 @@ const Tab1: React.FC = () => {
           </IonCardHeader>
           <IonCardContent>
             <IonItem>
-              {/* <IonLabel position="floating">Message to send</IonLabel> */}
               <IonInput
                 value={messageToSend}
                 onIonChange={e => setMessageToSend(e.detail.value!)}
                 placeholder="Enter your message"
               />
             </IonItem>
+            <IonButton expand="block" onClick={saveMessage}>
+              create challenge
+            </IonButton>
+            <IonButton expand="block" onClick={setupHCE} disabled={isHCEActive}>
+              {isHCEActive ? 'HCE Active' : 'Save Message & Start HCE'}
+            </IonButton>
 
             <div style={{ marginTop: '20px', textAlign: 'center' }}>
               <IonText color={isHCEActive ? 'success' : 'medium'}>
@@ -150,7 +149,7 @@ const Tab1: React.FC = () => {
               {isHCEActive && (
                 <IonText color="primary">
                   <p style={{ fontSize: '14px' }}>
-                    📱 HCE is active! Just hold another phone with the reader app close to this device.
+                    📱 HCE is active! Hold another phone with the reader app near this device.
                   </p>
                 </IonText>
               )}
