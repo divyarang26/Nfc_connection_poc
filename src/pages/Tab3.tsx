@@ -171,10 +171,9 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
               setScannedText(message);
               let username = "divya"
               console.log("log ~ :182 ~ awaitNfc.addListener ~ message:", message)
-              // const { credential } = await PasskeymeSDK.passkeyRegister({ challenge: message });
-              // console.log("log ~ :175 ~ awaitNfc.addListener ~ credential:", credential)
-              // let completionresponse = await client.post(`/complete_registration`, { username, credential });
-              // console.log("log ~ :176 ~ awaitNfc.addListener ~ completionresponse:", completionresponse)
+              const { credential } = await PasskeymeSDK.passkeyAuthenticate({ challenge: message});
+              let completionresponse = await client.post(`/complete_authentication`, { credential });
+              // setResult(JSON.stringify(completionresponse.data));
               setToastMessage(`✅ Successfully read: "${message}"`);
               setConnectionStatus('Data received successfully!');
             } else {
