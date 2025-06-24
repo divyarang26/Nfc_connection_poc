@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from "react";
 import {
   IonPage,
   IonHeader,
@@ -14,17 +14,20 @@ import {
   IonItem,
   IonInput,
   IonText,
-} from '@ionic/react';
-import { Nfc } from '@capawesome-team/capacitor-nfc';
-import { Preferences } from '@capacitor/preferences';
-import axios from 'axios';
+} from "@ionic/react";
+import { Nfc } from "@capawesome-team/capacitor-nfc";
+import { Preferences } from "@capacitor/preferences";
+import axios from "axios";
+import { UltraCompressor, WebAuthnData ,testUltraCompression} from "../utils/utils";
 
 const Tab1: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [messageToSend, setMessageToSend] = useState('NFC Data Transferred Successfully!');
+  const [toastMessage, setToastMessage] = useState("");
+  const [messageToSend, setMessageToSend] = useState(
+    "NFC Data Transferred Successfully!"
+  );
   const [isHCEActive, setIsHCEActive] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState('HCE not started');
+  const [connectionStatus, setConnectionStatus] = useState("HCE not started");
   const API_URL = "https://passkeyme.com";
   const APP_UUID = "cad7760b-3ee4-4df8-b7b4-73cdeaff0774";
   const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
@@ -32,11 +35,11 @@ const Tab1: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        const { value } = await Preferences.get({ key: 'nfc_message' });
+        const { value } = await Preferences.get({ key: "nfc_message" });
         if (value) {
           try {
             const parsed = JSON.parse(value);
-            if (parsed && typeof parsed.value === 'string') {
+            if (parsed && typeof parsed.value === "string") {
               setMessageToSend(parsed.value);
             } else {
               setMessageToSend(value);
@@ -44,11 +47,11 @@ const Tab1: React.FC = () => {
           } catch {
             setMessageToSend(value);
           }
-          setToastMessage('📝 Loaded previous message.');
+          setToastMessage("📝 Loaded previous message.");
           setShowToast(true);
         }
       } catch (error) {
-        console.error('Error loading message:', error);
+        console.error("Error loading message:", error);
       }
     };
 
@@ -77,12 +80,12 @@ const Tab1: React.FC = () => {
       setMessageToSend(startRes.data.challenge);
 
       await Preferences.set({
-        key: 'nfc_message',
+        key: "nfc_message",
         value: JSON.stringify({ value: startRes.data.challenge }),
       });
-      console.log('Saved message:', messageToSend);
+      console.log("Saved message:", messageToSend);
     } catch (error) {
-      console.error('Error saving message:', error);
+      console.error("Error saving message:", error);
     }
   };
 
@@ -90,26 +93,26 @@ const Tab1: React.FC = () => {
     try {
       // await saveMessage(); // Save before starting HCE
 
-      await Nfc.addListener('commandReceived', async (event) => {
-        console.log('Command received from reader:', event.data);
-        setConnectionStatus('Connected to reader!');
-        setToastMessage('📱 Reader connected! Sending data...');
+      await Nfc.addListener("commandReceived", async (event) => {
+        console.log("Command received from reader:", event.data);
+        setConnectionStatus("Connected to reader!");
+        setToastMessage("📱 Reader connected! Sending data...");
         setShowToast(true);
       });
 
-      await Nfc.addListener('nfcLinkDeactivated', (event) => {
-        console.log('NFC link deactivated:', event.reason);
-        setConnectionStatus('Disconnected - Ready for next connection');
-        setToastMessage('📴 Connection closed');
+      await Nfc.addListener("nfcLinkDeactivated", (event) => {
+        console.log("NFC link deactivated:", event.reason);
+        setConnectionStatus("Disconnected - Ready for next connection");
+        setToastMessage("📴 Connection closed");
         setShowToast(true);
       });
 
       setIsHCEActive(true);
-      setConnectionStatus('HCE Active - Hold phones together');
-      setToastMessage('✅ HCE service is ready!');
+      setConnectionStatus("HCE Active - Hold phones together");
+      setToastMessage("✅ HCE service is ready!");
       setShowToast(true);
     } catch (error: any) {
-      console.error('HCE setup error:', error);
+      console.error("HCE setup error:", error);
       setToastMessage(`❌ HCE setup failed: ${error.message}`);
       setShowToast(true);
     }
@@ -131,7 +134,7 @@ const Tab1: React.FC = () => {
             <IonItem>
               <IonInput
                 value={messageToSend}
-                onIonChange={e => setMessageToSend(e.detail.value!)}
+                onIonChange={(e) => setMessageToSend(e.detail.value!)}
                 placeholder="Enter your message"
               />
             </IonItem>
@@ -139,18 +142,31 @@ const Tab1: React.FC = () => {
               create challenge
             </IonButton>
             <IonButton expand="block" onClick={setupHCE} disabled={isHCEActive}>
-              {isHCEActive ? 'HCE Active' : 'Save Message & Start HCE'}
+              {isHCEActive ? "HCE Active" : "Save Message & Start HCE"}
             </IonButton>
 
-            <div style={{ marginTop: '20px', textAlign: 'center' }}>
-              <IonText color={isHCEActive ? 'success' : 'medium'}>
-                <p><strong>Status:</strong> {connectionStatus}</p>
+            <IonButton
+              expand="block"
+              onClick={() => {
+                console.log("Running test compression...");
+                testUltraCompression();
+              }}
+            >
+              Run WebAuthn Compression Test
+            </IonButton>
+
+            <div style={{ marginTop: "20px", textAlign: "center" }}>
+              <IonText color={isHCEActive ? "success" : "medium"}>
+                <p>
+                  <strong>Status:</strong> {connectionStatus}
+                </p>
               </IonText>
 
               {isHCEActive && (
                 <IonText color="primary">
-                  <p style={{ fontSize: '14px' }}>
-                    📱 HCE is active! Hold another phone with the reader app near this device.
+                  <p style={{ fontSize: "14px" }}>
+                    📱 HCE is active! Hold another phone with the reader app
+                    near this device.
                   </p>
                 </IonText>
               )}
