@@ -1,125 +1,124 @@
-// import { IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/react';
-// import ExploreContainer from '../components/ExploreContainer';
-// import './Tab2.css';
+import { IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonInput, IonItem, IonList, IonMenuButton, IonPage, IonTitle, IonToolbar } from '@ionic/react';
+import { useParams } from 'react-router';
+import ExploreContainer from '../components/ExploreContainer';
+import { PasskeymeSDK } from 'passkeyme-ionic-cap-plugin';
 
-// const Tab2: React.FC = () => {
-//   return (
-//     <IonPage>
-//       <IonHeader>
-//         <IonToolbar>
-//           <IonTitle>Tab 2</IonTitle>
-//         </IonToolbar>
-//       </IonHeader>
-//       <IonContent fullscreen>
-//         <IonHeader collapse="condense">
-//           <IonToolbar>
-//             <IonTitle size="large">Tab 2</IonTitle>
-//           </IonToolbar>
-//         </IonHeader>
-//         <ExploreContainer name="Tab 2 page" />
-//       </IonContent>
-//     </IonPage>
-//   );
-// };
+import axios from "axios";
+import { useState } from 'react';
 
-// export default Tab2;
+const API_URL = "https://passkeyme.com";
+const APP_UUID = "cad7760b-3ee4-4df8-b7b4-73cdeaff0774";
+const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
 
-// import React from 'react';
-// import { IonApp, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonText } from '@ionic/react';
-// import { PasskeyMe } from '@passkeyme/ionic-sdk';
-// const passkeyme = new PasskeyMe();
-// console.log("🚀 ~ passkeyme:", passkeyme)
+const client = axios.create({
+   baseURL: `${API_URL}/webauthn/${APP_UUID}`, 
+   headers: {
+     'x-api-key': API_KEY,
+     'Content-Type': 'application/json'
+   }});
 
-// const App: React.FC = () => {
-//   const [message, setMessage] = React.useState('');
+const Page: React.FC = () => {
 
-//   const mockChallenge = 'mock-challenge-string'; // In real app, get this from backend
+  const [result, setResult] = useState<any>("");
+  const [username, setUsername] = useState<any>("");
+  const [displayName, setDisplayName] = useState<any>("");
 
-//   const handleRegister = async () => {
-//     try {
-//       const result = await passkeyme.passkeyRegister(mockChallenge);
-//       setMessage('✅ Registration Success: ' + JSON.stringify(result));
-//     } catch (error) {
-//       setMessage('❌ Registration Failed: ' + (error as Error).message);
-//     }
-//   };
+  const appuuid = APP_UUID;
+  const apikey = API_KEY;
 
-//   const handleAuthenticate = async () => {
-//     try {
-//       const result = await passkeyme.passkeyAuthenticate(mockChallenge);
-//       setMessage('✅ Authentication Success: ' + JSON.stringify(result));
-//     } catch (error) {
-//       setMessage('❌ Authentication Failed: ' + (error as Error).message);
-//     }
-//   };
-
-//   return (
-//     <IonApp>
-//       <IonHeader>
-//         <IonToolbar>
-//           <IonTitle>PasskeyMe Ionic POC</IonTitle>
-//         </IonToolbar>
-//       </IonHeader>
-//       <IonContent className="ion-padding">
-//         <IonButton expand="block" onClick={handleRegister}>Register with Passkey</IonButton>
-//         <IonButton expand="block" color="secondary" onClick={handleAuthenticate} style={{ marginTop: '1rem' }}>
-//           Authenticate with Passkey
-//         </IonButton>
-//         <IonText style={{ marginTop: '1rem', display: 'block' }}>{message}</IonText>
-//       </IonContent>
-//     </IonApp>
-//   );
-// };
-
-// export default App;
-
-
-import React from 'react';
-import { IonApp, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonText } from '@ionic/react';
-import PasskeyMe from 'passkeyme-web-sdk'; // ✅ Use this import
-console.log("🚀 ~ PasskeyMe:", PasskeyMe)
-
-const passkeyme = new PasskeyMe();
-
-const App: React.FC = () => {
-  const [message, setMessage] = React.useState('');
-
-  const mockChallenge = 'mock-challenge-string'; // Replace with real challenge from backend
-
-  const handleRegister = async () => {
+  async function registerPasskey() {
     try {
-      const result = await passkeyme.passkeyRegister(mockChallenge);
-      setMessage('✅ Registration Success: ' + JSON.stringify(result));
-    } catch (error: any) {
-      setMessage('❌ Registration Failed: ' + error.message);
+
+      const response = await client.post(`/start_registration`, {username, displayName});
+
+      const { credential } = await PasskeymeSDK.passkeyRegister({ challenge: response.data.challenge });
+
+      let completionresponse = await client.post(`/complete_registration`, { username, credential });
+
+      setResult(JSON.stringify(completionresponse.data));
+    } catch (error) {
+      console.log('passkeyme: reg: error:', JSON.stringify(error))
+      setResult(JSON.stringify(error));
     }
   };
 
-  const handleAuthenticate = async () => {
+  async function authenticatePasskey() {
     try {
-      const result = await passkeyme.passkeyAuthenticate(mockChallenge);
-      setMessage('✅ Authentication Success: ' + JSON.stringify(result));
-    } catch (error: any) {
-      setMessage('❌ Authentication Failed: ' + error.message);
+
+      console.log("log ~ :50 ~ authenticatePasskey ~ username:", username)
+      
+      let response = await client.post(`/start_authentication`, { username });
+      console.log("log ~ :53 ~ authenticatePasskey ~ response.data.challenge:", response.data.challenge)
+      const { credential } = await PasskeymeSDK.passkeyAuthenticate({ challenge: response.data.challenge });
+      let completionresponse = await client.post(`/complete_authentication`, { credential });
+
+      setResult(JSON.stringify(completionresponse.data));
+
+    } catch (error) {
+      console.log('passkeyme: error:', JSON.stringify(error))
+      setResult(JSON.stringify(error));
     }
-  };
+  }
+
+  const { name } = useParams<{ name: string; }>();
 
   return (
-    <IonApp>
+    <IonPage>
       <IonHeader>
         <IonToolbar>
-          <IonTitle>PasskeyMe Ionic POC</IonTitle>
+          <IonButtons slot="start">
+            <IonMenuButton />
+          </IonButtons>
+          <IonTitle>{name}</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="ion-padding">
-        <IonButton expand="block" onClick={handleRegister}>Register with Passkey</IonButton>
-        <IonButton expand="block" color="secondary" onClick={handleAuthenticate} style={{ marginTop: '1rem' }}>
-          Authenticate with Passkey
-        </IonButton>
-        <IonText style={{ marginTop: '1rem', display: 'block' }}>{message}</IonText>
+
+      <IonContent fullscreen>
+        <IonHeader collapse="condense">
+          <IonToolbar>
+            <IonTitle size="large">{name}</IonTitle>
+          </IonToolbar>
+        </IonHeader>
+        <ExploreContainer name={name} />
+        <IonCard>
+          <IonCardHeader>
+            <IonCardTitle>
+            <IonList>
+              <IonItem>
+                <IonInput label="username" placeholder="Enter a username" value={username}
+                  onIonChange={(e: any) => setUsername(e.target.value)}               
+                  ></IonInput>
+              </IonItem>
+
+              <IonItem>
+                <IonInput label="displayName" placeholder="Enter a display name" value={displayName}
+                onIonChange={(e: any) => setDisplayName(e.target.value)}
+                ></IonInput>
+              </IonItem>
+            </IonList>
+                
+            <IonButton 
+                onClick={() => {
+                  registerPasskey()
+                }}
+            >Register Passkey
+            </IonButton>
+            <IonButton 
+                onClick={() => {
+                  authenticatePasskey()
+                }}
+            >Login Passkey
+            </IonButton>
+
+            </IonCardTitle>
+          </IonCardHeader>
+
+          <IonCardContent>{result}</IonCardContent>
+        </IonCard>
+
       </IonContent>
-    </IonApp>
+    </IonPage>
   );
 };
 
-export default App;
+export default Page;

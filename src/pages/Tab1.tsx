@@ -70,6 +70,7 @@ const Tab1: React.FC = () => {
   }, []);
   const saveMessage = async () => {
     try {
+    
       const startRes = await client.post("/start_authentication", {
         username: "divya",
       });
