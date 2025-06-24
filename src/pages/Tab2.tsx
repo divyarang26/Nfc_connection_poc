@@ -77,7 +77,7 @@
 import React from 'react';
 import { IonApp, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonText } from '@ionic/react';
 import PasskeyMe from 'passkeyme-web-sdk'; // ✅ Use this import
-import {UltraCompressor,WebAuthnData} from '../utils/utils'
+import {WebAuthnCompressor} from '../utils/utils'
 console.log("🚀 ~ PasskeyMe:", PasskeyMe)
 
 const passkeyme = new PasskeyMe();

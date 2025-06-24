@@ -18,7 +18,9 @@ import {
 import { Nfc } from "@capawesome-team/capacitor-nfc";
 import { Preferences } from "@capacitor/preferences";
 import axios from "axios";
-import { UltraCompressor, WebAuthnData ,testUltraCompression} from "../utils/utils";
+import {
+  WebAuthnCompressor,WebAuthnData
+} from "../utils/utils";
 
 const Tab1: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
@@ -76,13 +78,47 @@ const Tab1: React.FC = () => {
       const startRes = await client.post("/start_authentication", {
         username: "divya",
       });
-      setMessageToSend(startRes.data.challenge);
+      console.log("🚀 ~ saveMessage ~ startRes:", startRes);
+      console.log(
+        "🚀 ~ saveMessage ~ startRes challenge:",
+        JSON.stringify(startRes)
+      );
+      console.log(
+        "🚀 ~ saveMessage ~ startRes challenge---kkkk:",
+        startRes.data.challenge
+      );
 
+      const challengeObj = startRes.data.challenge; // this is full WebAuthnData
+      console.log("✅ WebAuthnData object:", challengeObj);
+
+      const webAuthnData: WebAuthnData = {
+        publicKey: {
+          challenge: startRes.data.challenge,
+          timeout: 300000,
+          rpId: "localhost",
+          allowCredentials: startRes.data.allowCredentials ?? [], // ensure array
+          userVerification: "required",
+        },
+      };
+
+      console.log("✅ WebAuthnData object:", JSON.stringify(webAuthnData));
+      // 👇 Fix: parse stringified challenge back to proper object
+      const parsedChallenge: WebAuthnData = JSON.parse(startRes.data.challenge);
+
+      // Compress using UltraCompressor
+      const compressed = WebAuthnCompressor.encodeWithHashing(parsedChallenge);
+      console.log("📦 Compressed base64:", compressed.encoded);
+      // console.log("📊 Compression stats:", compressed.stats);
+      setMessageToSend(compressed.encoded);
+      // setMessageToSend(startRes.data.challenge);
       await Preferences.set({
         key: "nfc_message",
-        value: JSON.stringify({ value: startRes.data.challenge }),
+        value: JSON.stringify({ value: compressed.encoded }),
       });
       console.log("Saved message:", messageToSend);
+
+
+
     } catch (error) {
       console.error("Error saving message:", error);
     }
@@ -144,7 +180,7 @@ const Tab1: React.FC = () => {
               {isHCEActive ? "HCE Active" : "Save Message & Start HCE"}
             </IonButton>
 
-            <IonButton
+            {/* <IonButton
               expand="block"
               onClick={() => {
                 console.log("Running test compression...");
@@ -152,7 +188,7 @@ const Tab1: React.FC = () => {
               }}
             >
               Run WebAuthn Compression Test
-            </IonButton>
+            </IonButton> */}
 
             <div style={{ marginTop: "20px", textAlign: "center" }}>
               <IonText color={isHCEActive ? "success" : "medium"}>
