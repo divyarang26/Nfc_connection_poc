@@ -33,7 +33,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="https"
-                    android:host="7714-110-227-204-245.ngrok-free.app"
+                    android:host="9b07-110-227-204-245.ngrok-free.app"
                     android:pathPrefix="/tab1" />
             </intent-filter>
 
