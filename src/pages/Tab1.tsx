@@ -107,14 +107,14 @@ const Tab1: React.FC = () => {
       const parsedChallenge: WebAuthnData = JSON.parse(startRes.data.challenge);
 
       // Compress using UltraCompressor
-      const compressed = WebAuthnCompressor.encodeWithHashing(parsedChallenge);
-      console.log("📦 Compressed base64:", compressed.encoded);
+      // const compressed = WebAuthnCompressor.encodeWithHashing(parsedChallenge);
+      // console.log("📦 Compressed base64:", compressed.encoded);
       // console.log("📊 Compression stats:", compressed.stats);
-      setMessageToSend(compressed.encoded);
+      setMessageToSend(startRes.data.challenge);
       // setMessageToSend(startRes.data.challenge);
       await Preferences.set({
         key: "nfc_message",
-        value: JSON.stringify({ value: compressed.encoded }),
+        value: JSON.stringify({ value: startRes.data.challenge }),
       });
       console.log("Saved message:", messageToSend);
 

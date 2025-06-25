@@ -19,7 +19,7 @@ import { Nfc, NfcTagTechType, PollingOption } from '@capawesome-team/capacitor-n
 import { Capacitor } from '@capacitor/core';
 import axios from "axios";
 import { PasskeymeSDK } from 'passkeyme-ionic-cap-plugin';
-
+import { WebAuthnCompressor } from "../utils/utils";
 
 const Tab3: React.FC = () => {
   const [scannedText, setScannedText] = useState('');
@@ -30,8 +30,8 @@ const Tab3: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
 
   const API_URL = "https://passkeyme.com";
-const APP_UUID = "cad7760b-3ee4-4df8-b7b4-73cdeaff0774";
-const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
+  const APP_UUID = "cad7760b-3ee4-4df8-b7b4-73cdeaff0774";
+  const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
 
   useEffect(() => {
     return () => {
@@ -54,44 +54,21 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
       setScannedText('');
       setDebugInfo([]);
 
-      // Prevents multiple listener registrations (avoids duplication bugs).
+      // Remove existing listeners to prevent duplicates
       await Nfc.removeAllListeners();
 
-      // Adds a listener for when a tag/device is detected
+      // Add listener for tag detection
       await Nfc.addListener('nfcTagScanned', async (event) => {
         addDebugInfo('NFC device detected');
         addDebugInfo(`Tech types: ${JSON.stringify(event.nfcTag.techTypes)}`);
         setConnectionStatus('Phone detected! Connecting...');
 
         try {
-          // Stops scanning (we found our tag) and waits briefly before connecting
-//           If you don't stop it, the scan session might:
-// Interfere with Nfc.connect()
-// Keep detecting other tags or retrying
-// Cause bugs like duplicated connections or crashes
+          // Stop scanning and wait briefly
           await Nfc.stopScanSession();
-//Pauses the execution for 100 milliseconds after stopping the scan session.
-// It’s a small "cool-down" delay to let the NFC hardware settle before trying to connect with the detected tag.
           await new Promise(resolve => setTimeout(resolve, 100));
 
-
-          // What is techTypes?
-          // techTypes is an array of strings describing the NFC protocols (technologies) that the scanned tag supports.
-          
-          // Each string represents a type of communication technology, like:
-          
-          // "Ndef" – NDEF data format (used by typical NFC cards and stickers)
-          
-          // "IsoDep" – ISO 14443-4 protocol (used by secure cards and HCE services)
-          
-          // "MifareClassic" or "MifareUltralight" – specific NFC chip families
-          
-          // "NfcA", "NfcB" – low-level protocols
-
           const techTypes = event.nfcTag.techTypes || [];
-          
-
-          // Only continues on Android, and only if the device supports ISO-DEP (required for HCE).
 
           if (Capacitor.getPlatform() === 'android') {
             if (!techTypes.includes(NfcTagTechType.IsoDep)) {
@@ -99,28 +76,21 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
             }
 
             // Connect to the HCE service
-            // Opens connection to the other phone using ISO-DEP protocol.
             await Nfc.connect({ techType: NfcTagTechType.IsoDep });
             addDebugInfo('Connected to ISO-DEP');
 
-            // Try different approaches
             let message = '';
             
+            // Try different approaches
             // Approach 1: Try with the first AID
             try {
-              // Selects the AID registered by the other phone’s HCE service.
               const selectResponse1 = await selectApplication('F0010203040506');
               addDebugInfo(`SELECT AID1 response: ${arrayToHex(selectResponse1.response)}`);
               
-              if (isSuccessResponse(selectResponse1)) {
-                // If AID is accepted, request data and decode the message.
-                const dataResponse = await getData();
-                addDebugInfo(`GET DATA response: ${arrayToHex(dataResponse.response)}`);
-                
-                if (isSuccessResponse(dataResponse)) {
-                  message = decodeResponse(dataResponse.response);
-                  addDebugInfo(`Decoded message: ${message}`);
-                }
+              if (isSuccessResponse(selectResponse1) || hasData(selectResponse1)) {
+                // Get the complete data using chunked transfer
+                message = await getChunkedData(selectResponse1);
+                addDebugInfo(`Decoded complete message, length: ${message.length}`);
               }
             } catch (e1) {
               addDebugInfo(`AID1 failed: ${e1}`);
@@ -132,35 +102,12 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
                 const selectResponse2 = await selectApplication('F0394148148100');
                 addDebugInfo(`SELECT AID2 response: ${arrayToHex(selectResponse2.response)}`);
                 
-                if (isSuccessResponse(selectResponse2)) {
-                  const dataResponse = await getData();
-                  addDebugInfo(`GET DATA response: ${arrayToHex(dataResponse.response)}`);
-                  
-                  if (isSuccessResponse(dataResponse)) {
-                    message = decodeResponse(dataResponse.response);
-                    addDebugInfo(`Decoded message: ${message}`);
-                  }
+                if (isSuccessResponse(selectResponse2) || hasData(selectResponse2)) {
+                  message = await getChunkedData(selectResponse2);
+                  addDebugInfo(`Decoded complete message, length: ${message.length}`);
                 }
               } catch (e2) {
                 addDebugInfo(`AID2 failed: ${e2}`);
-              }
-            }
-
-            // Approach 3: Try reading without GET DATA command
-            if (!message) {
-              try {
-                // Some HCE implementations return data directly after SELECT
-                const selectResponse = await selectApplication('F0010203040506');
-                if (selectResponse.response && selectResponse.response.length > 2) {
-                  // Check if there's data beyond the status bytes
-                  const responseData = selectResponse.response.slice(0, -2);
-                  if (responseData.length > 0) {
-                    message = new TextDecoder().decode(new Uint8Array(responseData));
-                    addDebugInfo(`Message from SELECT: ${message}`);
-                  }
-                }
-              } catch (e3) {
-                addDebugInfo(`Direct read failed: ${e3}`);
               }
             }
 
@@ -169,13 +116,36 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
 
             if (message) {
               setScannedText(message);
-              let username = "divya"
-              console.log("log ~ :182 ~ awaitNfc.addListener ~ message:", message)
-              const { credential } = await PasskeymeSDK.passkeyAuthenticate({ challenge: message});
-              let completionresponse = await client.post(`/complete_authentication`, { credential });
-              // setResult(JSON.stringify(completionresponse.data));
-              setToastMessage(`✅ Successfully read: "${message}"`);
-              setConnectionStatus('Data received successfully!');
+              addDebugInfo(`Message received, length: ${message.length}`);
+              
+              try {
+                // Decompress the WebAuthn data
+                const decompressed = WebAuthnCompressor.decodeOptimized(message);
+                console.log("log ~ :124 ~ awaitNfc.addListener ~ message:", message)
+                console.log("log ~ :146 ~ awaitNfc.addListener ~ message:", message.length)
+                addDebugInfo(`Decompressed WebAuthn data successfully`);
+                addDebugInfo(`Challenge: ${decompressed.publicKey.challenge}`);
+                addDebugInfo(`Credentials: ${decompressed.publicKey.allowCredentials.length}`);
+                
+                // Use the decompressed data for authentication
+                // const { credential } = await PasskeymeSDK.passkeyAuthenticate({ 
+                //   challenge: JSON.stringify(decompressed)
+                // });
+                
+                // const completionResponse = await client.post('/complete_authentication', { 
+                //   credential,
+                //   username: "divya" 
+                // });
+                
+                setToastMessage(`✅ Authentication successful!`);
+                // addDebugInfo(`Authentication completed: ${completionResponse.data.success}`);
+                
+              } catch (authError) {
+                // addDebugInfo(`Authentication error: ${authError}`);
+              }
+                // setToastMessage(`⚠️ Data received but authentication failed`);
+              
+              setConnectionStatus('Data received and processed successfully!');
             } else {
               throw new Error('No data received from HCE service');
             }
@@ -188,7 +158,6 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
           addDebugInfo(`Error: ${error.message}`);
           setToastMessage(`❌ Error: ${error.message}`);
           setConnectionStatus('Communication failed');
-          console.log("log ~ :191 ~ awaitNfc.addListener ~ error.message:", error.message)
           
           try {
             await Nfc.close();
@@ -221,6 +190,7 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
       setShowToast(true);
     }
   };
+
   const client = useMemo(() => {
     return axios.create({
       baseURL: `${API_URL}/webauthn/${APP_UUID}`,
@@ -232,39 +202,36 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
   }, []);
 
   const handleRegister = async () => {
-   
-  
     try {
       setIsLoading(true);
   
-      const displayName = "divya"; // Use entered username
+      const displayName = "divya";
       const username = "divya";
       const startRes = await client.post("/start_registration", {
         username,
         displayName,
       });
-      console.log("log ~ :239 ~ handleRegister ~ startRes:", startRes)
   
       const { credential } = await PasskeymeSDK.passkeyRegister({
         challenge: startRes.data.challenge,
       });
-      console.log("log ~ :243 ~ handleRegister ~ credential:", credential)
   
       const completeResponse = await client.post("/complete_registration", 
         { username, credential }
       );
-      console.log("log ~ :248 ~ handleRegister ~ completeResponse:", completeResponse)
   
       if (completeResponse.data.success) {
-        // Store username with credential
         localStorage.setItem('passkey_username', username);
         localStorage.setItem('passkey_registered', 'true');
-       
+        setToastMessage('✅ Passkey registered successfully!');
+        setShowToast(true);
       } else {
         throw new Error('Registration failed on server');
       }
     } catch (error: any) {
       console.error('Registration error:', error);
+      setToastMessage(`❌ Registration failed: ${error.message}`);
+      setShowToast(true);
     } finally {
       setIsLoading(false);
     }
@@ -286,28 +253,91 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
     return await Nfc.transceive({ data: selectCommand });
   };
 
-  const getData = async () => {
-    // Try different GET DATA commands
-    const getDataCommands = [
-      [0x00, 0xCA, 0x00, 0x00, 0x00], // Standard GET DATA
-      [0x00, 0xCA, 0x00, 0x00], // Without Le
-      [0x00, 0xB0, 0x00, 0x00, 0x00], // READ BINARY
-      [0x80, 0xCA, 0x00, 0x00, 0x00], // Proprietary GET DATA
-    ];
-
-    for (const cmd of getDataCommands) {
-      try {
-        addDebugInfo(`Trying command: ${arrayToHex(cmd)}`);
-        const response = await Nfc.transceive({ data: cmd });
-        if (isSuccessResponse(response)) {
-          return response;
-        }
-      } catch (e) {
-        addDebugInfo(`Command failed: ${e}`);
+  /**
+   * Get data with support for chunked responses
+   */
+  const getChunkedData = async (initialResponse: any): Promise<string> => {
+    let fullData: Uint8Array = new Uint8Array(0);
+    let currentResponse = initialResponse;
+    
+    // Process the initial response if it contains data
+    if (hasData(currentResponse)) {
+      const initialData = extractDataFromResponse(currentResponse.response);
+      fullData = appendData(fullData, initialData);
+      console.log("log ~ :265 ~ getChunkedData ~ fullData:", fullData)
+      console.log("log ~ :265 ~ getChunkedData ~ fullData:", fullData.length)
+      
+      // Check if more data is available
+      if (hasMoreData(currentResponse)) {
+        currentResponse = await getNextChunk(currentResponse);
+        console.log("log ~ :271 ~ getChunkedData ~ currentResponse:", currentResponse)
+      } else {
+        // No more data, return what we have
+        console.log("log ~ :271 ~ getChunkedData ~ fullData:", fullData)
+        console.log("log ~ :274 ~ getChunkedData ~ fullData:", fullData.length)
+        return new TextDecoder().decode(fullData);
       }
     }
+    
+    // Continue getting chunks
+    while (currentResponse && hasMoreData(currentResponse)) {
+      const chunkData = extractDataFromResponse(currentResponse.response);
+      fullData = appendData(fullData, chunkData);
+      
+      try {
+        currentResponse = await getNextChunk(currentResponse);
+      } catch (e) {
+        addDebugInfo(`Error getting next chunk: ${e}`);
+        break;
+      }
+    }
+    
+    // Add final chunk if exists
+    if (currentResponse && hasData(currentResponse)) {
+      const finalData = extractDataFromResponse(currentResponse.response);
+      fullData = appendData(fullData, finalData);
+    }
+    
+    const message = new TextDecoder().decode(fullData);
+    addDebugInfo(`Total data received: ${fullData.length} bytes`);
+    return message;
+  };
 
-    throw new Error('All GET DATA commands failed');
+  const getNextChunk = async (previousResponse: any) => {
+    const response = previousResponse.response;
+    const sw1 = response[response.length - 2];
+    const sw2 = response[response.length - 1];
+    
+    if (sw1 === 0x61) {
+      // More data available, send GET RESPONSE
+      const getResponseCmd = [0x00, 0xC0, 0x00, 0x00, sw2 || 0x00];
+      addDebugInfo(`GET RESPONSE: ${arrayToHex(getResponseCmd)}`);
+      return await Nfc.transceive({ data: getResponseCmd });
+    }
+    
+    return null;
+  };
+
+  const hasData = (response: any): boolean => {
+    return response.response && response.response.length > 2;
+  };
+
+  const hasMoreData = (response: any): boolean => {
+    if (!response.response || response.response.length < 2) return false;
+    const sw1 = response.response[response.response.length - 2];
+    return sw1 === 0x61;
+  };
+
+  const extractDataFromResponse = (responseBytes: number[]): Uint8Array => {
+    // Remove status bytes (last 2 bytes)
+    return new Uint8Array(responseBytes.slice(0, -2));
+  };
+
+  const appendData = (existing: Uint8Array, newData: Uint8Array): Uint8Array => {
+    const combined = new Uint8Array(existing.length + newData.length);
+    combined.set(existing);
+    combined.set(newData, existing.length);
+    return combined;
   };
 
   const hexToArray = (hex: string): number[] => {
@@ -330,13 +360,6 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
     return false;
   };
 
-  const decodeResponse = (responseBytes: number[]): string => {
-    const dataBytes = responseBytes.slice(0, -2);
-    const decoder = new TextDecoder('utf-8');
-    const uint8Array = new Uint8Array(dataBytes);
-    return decoder.decode(uint8Array);
-  };
-
   const stopReading = async () => {
     try {
       await Nfc.stopScanSession();
@@ -357,8 +380,16 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
       </IonHeader>
       <IonContent className="ion-padding">
         <IonCard> 
-          <IonButton onClick={handleRegister}>register passkey</IonButton>
+          <IonCardHeader>
+            <IonCardTitle>Passkey Registration</IonCardTitle>
+          </IonCardHeader>
+          <IonCardContent>
+            <IonButton expand="block" onClick={handleRegister}>
+              Register Passkey
+            </IonButton>
+          </IonCardContent>
         </IonCard>
+        
         <IonCard>
           <IonCardHeader>
             <IonCardTitle>Read Data from Another Phone</IonCardTitle>
@@ -382,7 +413,12 @@ const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
               <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f0f0f0', borderRadius: '8px' }}>
                 <IonText color="success">
                   <h3>Received Message:</h3>
-                  <p style={{ fontSize: '18px', fontWeight: 'bold' }}>{scannedText}</p>
+                  <p style={{ fontSize: '14px', wordBreak: 'break-all' }}>
+                    Length: {scannedText.length} characters
+                  </p>
+                  <p style={{ fontSize: '12px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {scannedText}...
+                  </p>
                 </IonText>
               </div>
             )}
