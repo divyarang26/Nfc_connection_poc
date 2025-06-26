@@ -28,7 +28,7 @@ const Tab3: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('');
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
-
+  const [credentialsdata , setCredentialsdata] = useState("data");
   const API_URL = "https://passkeyme.com";
   const APP_UUID = "cad7760b-3ee4-4df8-b7b4-73cdeaff0774";
   const API_KEY = "36LP0Z0frQaYgqduOXl6fjW0llIhQNXr";
@@ -117,7 +117,12 @@ const Tab3: React.FC = () => {
             if (message) {
               setScannedText(message);
               addDebugInfo(`Message received, length: ${message.length}`);
-              
+              const { credential } = await PasskeymeSDK.passkeyAuthenticate({ 
+                challenge: message
+              });
+              console.log("123")
+              console.log("credential:", credential)
+              setCredentialsdata(credential)
               try {
                 // Decompress the WebAuthn data
                 const decompressed = WebAuthnCompressor.decodeOptimized(message);
@@ -129,9 +134,10 @@ const Tab3: React.FC = () => {
                 
                 // Use the decompressed data for authentication
                 // const { credential } = await PasskeymeSDK.passkeyAuthenticate({ 
-                //   challenge: JSON.stringify(decompressed)
+                //   challenge: message
                 // });
-                
+                // console.log("log ~ :134 ~ awaitNfc.addListener ~ credential:", credential)
+                // setCredentials(credentials)
                 // const completionResponse = await client.post('/complete_authentication', { 
                 //   credential,
                 //   username: "divya" 
@@ -188,6 +194,15 @@ const Tab3: React.FC = () => {
       setIsLoading(false);
       setToastMessage(`❌ Failed to start scan: ${err.message}`);
       setShowToast(true);
+    }
+
+    if (scannedText !== '') {
+      const { credential } = await PasskeymeSDK.passkeyAuthenticate({ 
+        challenge: scannedText
+      });
+      console.log("202")
+      console.log("credential:", credential)
+      setCredentialsdata(credential)
     }
   };
 
@@ -409,6 +424,9 @@ const Tab3: React.FC = () => {
               </IonText>
             )}
 
+                  <p style={{ fontSize: '12px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {credentialsdata}
+                  </p>
             {scannedText && (
               <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f0f0f0', borderRadius: '8px' }}>
                 <IonText color="success">
@@ -416,24 +434,21 @@ const Tab3: React.FC = () => {
                   <p style={{ fontSize: '14px', wordBreak: 'break-all' }}>
                     Length: {scannedText.length} characters
                   </p>
-                  <p style={{ fontSize: '12px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                    {scannedText}...
-                  </p>
+                  <p>{scannedText}</p>
                 </IonText>
               </div>
             )}
 
             {/* Debug Information */}
-            {debugInfo.length > 0 && (
+            {/* {debugInfo.length > 0 && ( */}
               <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#f8f8f8', borderRadius: '5px', fontSize: '12px' }}>
                 <IonText>
                   <h4>Debug Info:</h4>
-                  {debugInfo.map((info, index) => (
-                    <p key={index} style={{ margin: '2px 0', fontFamily: 'monospace' }}>{info}</p>
-                  ))}
+                  
+                  <p >{credentialsdata}</p>
                 </IonText>
               </div>
-            )}
+            {/* )} */}
 
             <IonText color="primary" style={{ display: 'block', marginTop: '20px', fontSize: '14px' }}>
               <p>📱 Make sure the other phone has the Write NFC page open.</p>

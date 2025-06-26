@@ -12,7 +12,7 @@
             \"relation\": [\"delegate_permission/common.handle_all_urls\"],
             \"target\": {
                 \"namespace\": \"android_app\",
-                \"site\": \"https://9b07-110-227-204-245.ngrok-free.app"
+                \"site\": \"https://4a33-110-227-204-245.ngrok-free.app"
             }
         }
         </string>
