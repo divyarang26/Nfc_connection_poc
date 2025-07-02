@@ -17,13 +17,14 @@ import {
 import { Nfc, NfcTagTechType, PollingOption } from '@capawesome-team/capacitor-nfc';
 import { Capacitor } from '@capacitor/core';
 
-// User Device - Reads data from merchant via NFC
+// User Device - Reads data from merchant via NFC with chunked transfer support
 const User: React.FC = () => {
   const [receivedData, setReceivedData] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const [showToast, setShowToast] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('');
+  const [dataProgress, setDataProgress] = useState('');
 
   useEffect(() => {
     return () => {
@@ -40,6 +41,7 @@ const User: React.FC = () => {
       setIsScanning(true);
       setConnectionStatus('Starting NFC scan...');
       setReceivedData('');
+      setDataProgress('');
 
       await Nfc.removeAllListeners();
 
@@ -55,16 +57,17 @@ const User: React.FC = () => {
           if (Capacitor.getPlatform() === 'android' && techTypes.includes(NfcTagTechType.IsoDep)) {
             await Nfc.connect({ techType: NfcTagTechType.IsoDep });
 
-            // Try to read data from HCE
+            // Select the HCE application
             const selectResponse = await selectApplication('F0010203040506');
             
             if (selectResponse.response && selectResponse.response.length > 2) {
-              const merchantData = await getDataFromResponse(selectResponse);
+              // Read all chunks of data
+              const completeData = await readAllChunks(selectResponse);
               
-              if (merchantData) {
-                setReceivedData(merchantData);
+              if (completeData) {
+                setReceivedData(completeData);
                 setConnectionStatus('Data received successfully!');
-                setToastMessage('✅ Data received from merchant!');
+                setToastMessage('✅ All data received from merchant!');
               } else {
                 setToastMessage('⚠️ No data received from merchant');
                 setConnectionStatus('No data found');
@@ -112,13 +115,55 @@ const User: React.FC = () => {
     return await Nfc.transceive({ data: selectCommand });
   };
 
-  // Extract data from HCE response
-  const getDataFromResponse = async (response: any): Promise<string> => {
-    if (response.response && response.response.length > 2) {
-      // Remove status bytes (last 2 bytes)
-      const dataBytes = response.response.slice(0, -2);
-      return new TextDecoder().decode(new Uint8Array(dataBytes));
+  // Read all chunks of data
+  const readAllChunks = async (initialResponse: any): Promise<string> => {
+    let allData: number[] = [];
+    let currentResponse = initialResponse;
+    let chunkCount = 0;
+    
+    try {
+      // Process chunks until we get all data
+      while (currentResponse && currentResponse.response && currentResponse.response.length > 2) {
+        const response = currentResponse.response;
+        const sw1 = response[response.length - 2];
+        const sw2 = response[response.length - 1];
+        
+        // Extract data (excluding status bytes)
+        const chunkData = response.slice(0, -2);
+        allData = allData.concat(chunkData);
+        chunkCount++;
+        
+        // Update progress
+        setDataProgress(`Reading chunk ${chunkCount}... (${allData.length} bytes)`);
+        
+        // Check if more data is available (status 61XX)
+        if (sw1 === 0x61) {
+          // More data available, send GET RESPONSE command
+          const getResponseCommand = [0x00, 0xC0, 0x00, 0x00, sw2 || 0x00];
+          currentResponse = await Nfc.transceive({ data: getResponseCommand });
+        } else if (sw1 === 0x90 && sw2 === 0x00) {
+          // Success, no more data
+          break;
+        } else {
+          // Error or unexpected status
+          console.error(`Unexpected status: ${sw1.toString(16)} ${sw2.toString(16)}`);
+          break;
+        }
+      }
+      
+      // Convert accumulated data to string
+      if (allData.length > 0) {
+        const uint8Array = new Uint8Array(allData);
+        const decodedData = new TextDecoder().decode(uint8Array);
+        setDataProgress(`Complete! ${chunkCount} chunks, ${allData.length} bytes total`);
+        return decodedData;
+      }
+      
+    } catch (error) {
+      console.error('Error reading chunks:', error);
+      setDataProgress(`Error after ${chunkCount} chunks`);
     }
+    
     return '';
   };
 
@@ -136,6 +181,7 @@ const User: React.FC = () => {
       await Nfc.removeAllListeners();
       setIsScanning(false);
       setConnectionStatus('');
+      setDataProgress('');
       setToastMessage('🛑 NFC scan stopped');
       setShowToast(true);
     } catch (error: any) {
@@ -171,6 +217,12 @@ const User: React.FC = () => {
               </IonText>
             )}
 
+            {dataProgress && (
+              <IonText color="secondary" style={{ display: 'block', marginTop: '10px', textAlign: 'center' }}>
+                <p style={{ fontSize: '12px' }}>{dataProgress}</p>
+              </IonText>
+            )}
+
             {receivedData && (
               <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#e8f5e9', borderRadius: '8px' }}>
                 <IonText color="success">
@@ -181,7 +233,9 @@ const User: React.FC = () => {
                     backgroundColor: 'white', 
                     padding: '10px', 
                     borderRadius: '4px',
-                    border: '1px solid #ddd'
+                    border: '1px solid #ddd',
+                    maxHeight: '300px',
+                    overflow: 'auto'
                   }}>
                     {receivedData}
                   </p>
