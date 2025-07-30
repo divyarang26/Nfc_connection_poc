@@ -12,24 +12,22 @@ import {
   IonCardHeader,
   IonCardTitle,
   IonItem,
-  IonInput,
   IonText,
   IonLabel,
   IonTextarea,
-  IonSpinner,
 } from "@ionic/react";
 import { Nfc } from "@capawesome-team/capacitor-nfc";
 import { Preferences } from "@capacitor/preferences";
 
-// Merchant Terminal - HCE mode to emulate EbioroApplet
+// Merchant Terminal - HCE mode to share public key
 const Merchant: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
-  const [dataToSend, setDataToSend] = useState("Hello from Merchant!");
+  const [publicKeyData, setPublicKeyData] = useState(
+  "049958B8780454498C19AA7094455B2BB0670A90F3221241A52B7A53AFEF28F4C61EAEBCF6599C751D8F19644C4656D4A21CDA0D407C40B2C7B7855A267FAE2456"
+  );
   const [isHCEActive, setIsHCEActive] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState("Ready to send data");
-  const [pin, setPin] = useState("123456");
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState("Ready to share public key");
 
   useEffect(() => {
     return () => {
@@ -37,56 +35,38 @@ const Merchant: React.FC = () => {
     };
   }, []);
 
-  // Start HCE to emulate EbioroApplet
+  // Start HCE to share public key
   const startHCE = async () => {
     try {
-      if (!dataToSend.trim()) {
-        setToastMessage("⚠️ Please enter some data to send");
+      if (!publicKeyData.trim()) {
+        setToastMessage("⚠️ Please enter the public key data");
         setShowToast(true);
         return;
       }
 
-      if (pin.length !== 6) {
-        setToastMessage("⚠️ PIN must be exactly 6 digits");
-        setShowToast(true);
-        return;
-      }
-
-      // Store data and PIN for HCE service
+      // Store public key data for HCE service
       await Preferences.set({
-        key: "nfc_message",
-        value: dataToSend,
-      });
-
-      await Preferences.set({
-        key: "nfc_pin",
-        value: pin,
+        key: "public_key_data",
+        value: publicKeyData,
       });
 
       // Set up HCE listeners
       await Nfc.addListener("commandReceived", async (event) => {
-        setIsProcessing(true);
-        setConnectionStatus("Processing command from user device...");
-        
-        // The actual APDU processing happens in the native HCE service
-        // This is just for UI feedback
-        setTimeout(() => {
-          setConnectionStatus("Command processed");
-          setIsProcessing(false);
-        }, 500);
+        setConnectionStatus("User device connected - Sharing public key...");
       });
 
       await Nfc.addListener("nfcLinkDeactivated", (event) => {
-        setConnectionStatus("Session completed");
-        setToastMessage("✅ Data transfer completed!");
+        setConnectionStatus("Public key shared successfully!");
+        setToastMessage("✅ Public key transferred!");
         setShowToast(true);
-        setIsHCEActive(false);
-        setIsProcessing(false);
+        setTimeout(() => {
+          setConnectionStatus("Ready to share public key");
+        }, 2000);
       });
 
       setIsHCEActive(true);
-      setConnectionStatus("HCE Active - Emulating EbioroApplet");
-      setToastMessage("📡 Ready to receive APDU commands");
+      setConnectionStatus("HCE Active - Ready to share public key");
+      setToastMessage("📡 Ready to share public key via NFC");
       setShowToast(true);
 
     } catch (error: any) {
@@ -100,7 +80,7 @@ const Merchant: React.FC = () => {
     try {
       await Nfc.removeAllListeners();
       setIsHCEActive(false);
-      setConnectionStatus("Ready to send data");
+      setConnectionStatus("Ready to share public key");
       setToastMessage("🛑 HCE stopped");
       setShowToast(true);
     } catch (error: any) {
@@ -113,33 +93,23 @@ const Merchant: React.FC = () => {
     <IonPage>
       <IonHeader>
         <IonToolbar>
-          <IonTitle>Merchant Terminal (EbioroApplet HCE)</IonTitle>
+          <IonTitle>Merchant - Public Key Sharing</IonTitle>
         </IonToolbar>
       </IonHeader>
       <IonContent className="ion-padding">
         <IonCard>
           <IonCardHeader>
-            <IonCardTitle>Emulate EbioroApplet via HCE</IonCardTitle>
+            <IonCardTitle>Share Public Key via NFC</IonCardTitle>
           </IonCardHeader>
           <IonCardContent>
             <IonItem>
-              <IonLabel position="floating">PIN (6 digits)</IonLabel>
-              <IonInput
-                value={pin}
-                onIonChange={(e) => setPin(e.detail.value!)}
-                placeholder="123456"
-                maxlength={6}
-                type="number"
-              />
-            </IonItem>
-
-            <IonItem>
-              <IonLabel position="floating">Data to Send</IonLabel>
+              <IonLabel position="floating">Public Key Data</IonLabel>
               <IonTextarea
-                value={dataToSend}
-                onIonChange={(e) => setDataToSend(e.detail.value!)}
-                placeholder="Enter data to send when authenticated"
-                rows={3}
+                value={publicKeyData}
+                onIonChange={(e) => setPublicKeyData(e.detail.value!)}
+                placeholder="Enter public key data"
+                rows={8}
+                style={{ fontFamily: 'monospace', fontSize: '12px' }}
               />
             </IonItem>
 
@@ -148,9 +118,8 @@ const Merchant: React.FC = () => {
               onClick={isHCEActive ? stopHCE : startHCE}
               color={isHCEActive ? "danger" : "primary"}
               className="ion-margin-top"
-              disabled={isProcessing}
             >
-              {isHCEActive ? "Stop HCE Emulation" : "Start HCE Emulation"}
+              {isHCEActive ? "Stop NFC Sharing" : "Start NFC Sharing"}
             </IonButton>
 
             <div style={{ marginTop: "20px", textAlign: "center" }}>
@@ -158,28 +127,19 @@ const Merchant: React.FC = () => {
                 <p><strong>Status:</strong> {connectionStatus}</p>
               </IonText>
 
-              {isProcessing && (
-                <div style={{ marginTop: "10px" }}>
-                  <IonSpinner name="crescent" />
-                </div>
-              )}
-
-              {isHCEActive && !isProcessing && (
+              {isHCEActive && (
                 <IonText color="primary">
-                  <p style={{ fontSize: "14px" }}>
+                  <p style={{ fontSize: "14px", marginTop: "10px" }}>
                     📱 Hold the user's device near this phone
                   </p>
                   <p style={{ fontSize: "12px", color: "#666" }}>
-                    The HCE service will handle:
-                    <br />• APDU SELECT command
-                    <br />• PIN verification (VERIFY)
-                    <br />• Security operations (SIGN/GET KEY)
+                    No authentication required - Direct access
                   </p>
                 </IonText>
               )}
             </div>
 
-            {dataToSend && (
+            {publicKeyData && (
               <div style={{ 
                 marginTop: "20px", 
                 padding: "15px", 
@@ -187,15 +147,22 @@ const Merchant: React.FC = () => {
                 borderRadius: "8px" 
               }}>
                 <IonText color="primary">
-                  <p><strong>Configuration:</strong></p>
-                  <p style={{ fontSize: "12px" }}>
-                    <strong>PIN:</strong> {pin}
-                  </p>
-                  <p style={{ fontSize: "12px", wordBreak: "break-all" }}>
-                    <strong>Data:</strong> {dataToSend}
-                  </p>
-                  <p style={{ fontSize: "10px", color: "#666" }}>
-                    Length: {dataToSend.length} characters
+                  <p><strong>Public Key Preview:</strong></p>
+                  <pre style={{ 
+                    fontSize: "10px", 
+                    wordBreak: "break-all",
+                    whiteSpace: "pre-wrap",
+                    maxHeight: "150px",
+                    overflow: "auto",
+                    backgroundColor: "white",
+                    padding: "10px",
+                    borderRadius: "4px",
+                    border: "1px solid #ddd"
+                  }}>
+                    {publicKeyData}
+                  </pre>
+                  <p style={{ fontSize: "10px", color: "#666", marginTop: "5px" }}>
+                    Length: {publicKeyData.length} characters
                   </p>
                 </IonText>
               </div>

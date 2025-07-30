@@ -1,3 +1,4 @@
+
 package io.ionic.starter;
 
 import android.nfc.cardemulation.HostApduService;
@@ -16,35 +17,21 @@ public class MyHostApduService extends HostApduService {
     private static final byte[] EBIORO_AID = HexStringToByteArray("F0010203040506");
     
     // EbioroApplet command codes
-    private static final byte CLA = 0x00;
-    private static final byte INS_VERIFY = 0x20;
-    private static final byte INS_CHANGE_REFERENCE_DATA = 0x24;
-    private static final byte INS_RESET_RETRY_COUNTER = 0x2C;
-    private static final byte INS_PERFORM_SECURITY_OPERATION = 0x2A;
-    private static final byte INS_MANAGE_SECURITY_ENVIRONMENT = 0x22;
-    private static final byte INS_GENERATE_ASYMMETRIC_KEYPAIR = 0x46;
     private static final byte INS_GET_PUBLIC_KEY = 0x47;
-    private static final byte INS_GET_RAW_PUBLIC_KEY = 0x48;
     
     // Response codes
     private static final byte[] APDU_SUCCESS = {(byte)0x90, (byte)0x00};
     private static final byte[] APDU_UNKNOWN = {(byte)0x6F, (byte)0x00};
-    private static final byte[] APDU_WRONG_LENGTH = {(byte)0x67, (byte)0x00};
     private static final byte[] APDU_INCORRECT_P1P2 = {(byte)0x6A, (byte)0x86};
-    private static final byte[] APDU_SECURITY_NOT_SATISFIED = {(byte)0x69, (byte)0x82};
     
     // Maximum chunk size for data transfer
     private static final int MAX_CHUNK_SIZE = 250;
 
     // State tracking
     private boolean isAppletSelected = false;
-    private boolean isPinVerified = false;
-    private String currentNfcMessage = "";
+    private String publicKeyData = "";
     private byte[] remainingData = null;
     private int currentOffset = 0;
-    
-    // Default PIN (you should change this)
-    private static final byte[] DEFAULT_PIN = {0x31, 0x32, 0x33, 0x34, 0x35, 0x36}; // "123456"
 
     @Override
     public byte[] processCommandApdu(byte[] commandApdu, Bundle extras) {
@@ -54,7 +41,6 @@ public class MyHostApduService extends HostApduService {
             return APDU_UNKNOWN;
         }
 
-        byte cla = commandApdu[0];
         byte ins = commandApdu[1];
         byte p1 = commandApdu[2];
         byte p2 = commandApdu[3];
@@ -72,26 +58,7 @@ public class MyHostApduService extends HostApduService {
 
         // Handle EbioroApplet commands
         switch (ins) {
-            case INS_VERIFY:
-                return handleVerifyPin(commandApdu);
-                
-            case INS_CHANGE_REFERENCE_DATA:
-                return handleChangeReferenceData(commandApdu);
-                
-            case INS_RESET_RETRY_COUNTER:
-                return handleResetRetryCounter(commandApdu);
-                
-            case INS_PERFORM_SECURITY_OPERATION:
-                return handlePerformSecurityOperation(commandApdu);
-                
-            case INS_MANAGE_SECURITY_ENVIRONMENT:
-                return handleManageSecurityEnvironment(commandApdu);
-                
-            case INS_GENERATE_ASYMMETRIC_KEYPAIR:
-                return handleGenerateKeypair(commandApdu);
-                
             case INS_GET_PUBLIC_KEY:
-            case INS_GET_RAW_PUBLIC_KEY:
                 return handleGetPublicKey(commandApdu);
                 
             case (byte)0xC0: // GET RESPONSE for chunked data
@@ -113,10 +80,9 @@ public class MyHostApduService extends HostApduService {
                 if (Arrays.equals(aid, EBIORO_AID)) {
                     Log.d(TAG, "EbioroApplet AID selected!");
                     isAppletSelected = true;
-                    isPinVerified = false; // Reset PIN verification on new selection
                     
-                    // Prepare initial response if needed
-                    updateCurrentNfcMessageFromStorage();
+                    // Load public key data from storage
+                    updatePublicKeyFromStorage();
                     
                     return APDU_SUCCESS;
                 }
@@ -127,136 +93,17 @@ public class MyHostApduService extends HostApduService {
         return APDU_UNKNOWN;
     }
 
-    private byte[] handleVerifyPin(byte[] commandApdu) {
-        Log.d(TAG, "VERIFY PIN command received");
-        
-        // Check P1 and P2
-        if (commandApdu[2] != 0x00 || commandApdu[3] != 0x01) {
-            return APDU_INCORRECT_P1P2;
-        }
-        
-        // Check PIN length
-        if (commandApdu.length < 5 || commandApdu[4] != 0x06) {
-            return APDU_WRONG_LENGTH;
-        }
-        
-        // Extract PIN
-        byte[] providedPin = Arrays.copyOfRange(commandApdu, 5, 11);
-        
-        // Verify PIN (in real implementation, this should be secure)
-        if (Arrays.equals(providedPin, DEFAULT_PIN)) {
-            isPinVerified = true;
-            Log.d(TAG, "PIN verified successfully");
-            return APDU_SUCCESS;
-        } else {
-            // In real implementation, track retry count
-            Log.d(TAG, "PIN verification failed");
-            return new byte[]{(byte)0x63, (byte)0xC2}; // 2 tries remaining
-        }
-    }
-
-    private byte[] handleChangeReferenceData(byte[] commandApdu) {
-        Log.d(TAG, "CHANGE REFERENCE DATA command received");
-        
-        // For initial PIN setup (P1=0x01)
-        if (commandApdu[2] == 0x01 && commandApdu[3] == 0x01) {
-            // In real implementation, store the new PIN
-            Log.d(TAG, "Initial PIN setup");
-            return APDU_SUCCESS;
-        }
-        
-        // For PIN change (P1=0x00)
-        if (commandApdu[2] == 0x00 && commandApdu[3] == 0x01) {
-            if (!isPinVerified) {
-                return APDU_SECURITY_NOT_SATISFIED;
-            }
-            // In real implementation, verify old PIN and set new PIN
-            Log.d(TAG, "PIN change");
-            return APDU_SUCCESS;
-        }
-        
-        return APDU_INCORRECT_P1P2;
-    }
-
-    private byte[] handleResetRetryCounter(byte[] commandApdu) {
-        Log.d(TAG, "RESET RETRY COUNTER command received");
-        
-        if (commandApdu[2] != 0x00 || commandApdu[3] != 0x01) {
-            return APDU_INCORRECT_P1P2;
-        }
-        
-        // In real implementation, reset PIN retry counter
-        Log.d(TAG, "PIN retry counter reset");
-        return APDU_SUCCESS;
-    }
-
-    private byte[] handlePerformSecurityOperation(byte[] commandApdu) {
-        Log.d(TAG, "PERFORM SECURITY OPERATION command received");
-        
-        if (!isPinVerified) {
-            return APDU_SECURITY_NOT_SATISFIED;
-        }
-        
-        // Check for signature operation (P1=0x9E, P2=0x9A)
-        if (commandApdu[2] == (byte)0x9E && commandApdu[3] == (byte)0x9A) {
-            Log.d(TAG, "Digital signature requested");
-            
-            // In this simplified version, we return the stored message as "signed data"
-            updateCurrentNfcMessageFromStorage();
-            remainingData = currentNfcMessage.getBytes();
-            currentOffset = 0;
-            
-            return getNextChunk();
-        }
-        
-        return APDU_INCORRECT_P1P2;
-    }
-
-    private byte[] handleManageSecurityEnvironment(byte[] commandApdu) {
-        Log.d(TAG, "MANAGE SECURITY ENVIRONMENT command received");
-        
-        if (!isPinVerified) {
-            return APDU_SECURITY_NOT_SATISFIED;
-        }
-        
-        // P1=0x41 for SET operation
-        if (commandApdu[2] == 0x41) {
-            // In real implementation, parse TLV data to set algorithm and key reference
-            Log.d(TAG, "Security environment set");
-            return APDU_SUCCESS;
-        }
-        
-        // P1=0xF3 for RESTORE operation
-        if (commandApdu[2] == (byte)0xF3) {
-            Log.d(TAG, "Security environment restored");
-            return APDU_SUCCESS;
-        }
-        
-        return APDU_INCORRECT_P1P2;
-    }
-
-    private byte[] handleGenerateKeypair(byte[] commandApdu) {
-        Log.d(TAG, "GENERATE ASYMMETRIC KEYPAIR command received");
-        
-        if (!isPinVerified) {
-            return APDU_SECURITY_NOT_SATISFIED;
-        }
-        
-        // In real implementation, generate keypair and return public key
-        // For now, return success
-        return APDU_SUCCESS;
-    }
-
     private byte[] handleGetPublicKey(byte[] commandApdu) {
         Log.d(TAG, "GET PUBLIC KEY command received");
         
-        if (!isPinVerified) {
-            return APDU_SECURITY_NOT_SATISFIED;
+        // Check P1 and P2
+        if (commandApdu[2] != 0x00 || commandApdu[3] != 0x00) {
+            return APDU_INCORRECT_P1P2;
         }
         
-        // In this simplified version, return the stored message as "public key data"
-        updateCurrentNfcMessageFromStorage();
-        remainingData = currentNfcMessage.getBytes();
+        // Prepare public key data for chunked transfer
+        updatePublicKeyFromStorage();
+        remainingData = publicKeyData.getBytes();
         currentOffset = 0;
         
         return getNextChunk();
@@ -304,47 +151,50 @@ public class MyHostApduService extends HostApduService {
     public void onDeactivated(int reason) {
         Log.d(TAG, "HCE Deactivated: " + reason);
         isAppletSelected = false;
-        isPinVerified = false;
         remainingData = null;
         currentOffset = 0;
     }
 
     /**
-     * Reads the NFC message from Capacitor's SharedPreferences
+     * Reads the public key data from Capacitor's SharedPreferences
      */
-    private void updateCurrentNfcMessageFromStorage() {
+    private void updatePublicKeyFromStorage() {
         SharedPreferences prefs = getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
-        String storedMessage = null;
+        String storedKey = null;
 
         try {
-            String jsonData = prefs.getString("nfc_message", null);
+            String jsonData = prefs.getString("public_key_data", null);
             if (jsonData != null) {
                 try {
                     JSONObject json = new JSONObject(jsonData);
-                    storedMessage = json.optString("value", null);
+                    storedKey = json.optString("value", null);
 
-                    if (storedMessage == null || storedMessage.isEmpty()) {
+                    if (storedKey == null || storedKey.isEmpty()) {
                         Log.w(TAG, "'value' key missing or empty in JSON data.");
                         if (!jsonData.isEmpty()) {
-                            storedMessage = jsonData;
+                            storedKey = jsonData;
                         }
                     }
-                    Log.d(TAG, "Successfully parsed message from storage, length: " + 
-                              (storedMessage != null ? storedMessage.length() : 0));
+                    Log.d(TAG, "Successfully parsed public key from storage, length: " + 
+                              (storedKey != null ? storedKey.length() : 0));
                 } catch (JSONException e) {
                     Log.w(TAG, "Stored data is not valid JSON, treating as plain string.");
-                    storedMessage = jsonData;
+                    storedKey = jsonData;
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error retrieving message from storage: " + e.getMessage());
+            Log.e(TAG, "Error retrieving public key from storage: " + e.getMessage());
         }
 
-        if (storedMessage != null && !storedMessage.isEmpty()) {
-            currentNfcMessage = storedMessage;
-            Log.d(TAG, "Updated NFC message, length: " + currentNfcMessage.length());
+        if (storedKey != null && !storedKey.isEmpty()) {
+            publicKeyData = storedKey;
+            Log.d(TAG, "Updated public key data, length: " + publicKeyData.length());
         } else {
-            currentNfcMessage = "NFC Data Transferred Successfully!";
+            // Default public key data for demo
+            publicKeyData = "-----BEGIN PUBLIC KEY-----\n" +
+                           "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1234567890\n" +
+                           "EXAMPLE_PUBLIC_KEY_DATA_HERE_1234567890ABCDEF\n" +
+                           "-----END PUBLIC KEY-----";
         }
     }
 
