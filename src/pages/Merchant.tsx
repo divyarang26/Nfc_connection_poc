@@ -1,180 +1,159 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from 'react';
 import {
-  IonPage,
-  IonHeader,
-  IonToolbar,
-  IonTitle,
-  IonContent,
-  IonButton,
-  IonToast,
-  IonCard,
-  IonCardContent,
-  IonCardHeader,
-  IonCardTitle,
-  IonItem,
-  IonText,
-  IonLabel,
-  IonTextarea,
-} from "@ionic/react";
-import { Nfc } from "@capawesome-team/capacitor-nfc";
-import { Preferences } from "@capacitor/preferences";
+  IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
+  IonButton, IonInput, IonItem, IonLabel, IonToast
+} from '@ionic/react';
+import { Capacitor } from '@capacitor/core';
+import { Nfc, NfcTagTechType, PollingOption } from '@capawesome-team/capacitor-nfc';
+import { useDispatch, useSelector } from 'react-redux';
+import { buildPayment } from '../smartWalletSlice';
+import type { AppDispatch, RootState } from '../store';
 
-// Merchant Terminal - HCE mode to share public key
 const Merchant: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { buildPaymentResult, loading, error } = useSelector((state: RootState) => state.smartWallet);
+  const [walletAddress, setWalletAddress] = useState('');
+  const [amount, setAmount] = useState('');
   const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState("");
-  const [publicKeyData, setPublicKeyData] = useState(
-  "049958B8780454498C19AA7094455B2BB0670A90F3221241A52B7A53AFEF28F4C61EAEBCF6599C751D8F19644C4656D4A21CDA0D407C40B2C7B7855A267FAE2456"
-  );
-  const [isHCEActive, setIsHCEActive] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState("Ready to share public key");
+  const [toastMessage, setToastMessage] = useState('');
+  const [scanning, setScanning] = useState(false);
 
-  useEffect(() => {
-    return () => {
-      Nfc.removeAllListeners();
-    };
-  }, []);
+  const readCard = async () => {
+    setScanning(true);
+    setWalletAddress('');
 
-  // Start HCE to share public key
-  const startHCE = async () => {
     try {
-      if (!publicKeyData.trim()) {
-        setToastMessage("⚠️ Please enter the public key data");
+      await Nfc.removeAllListeners();
+
+      await Nfc.addListener('nfcTagScanned', async (event: any) => {
+        try {
+          await Nfc.stopScanSession();
+          const techTypes = event.nfcTag.techTypes || [];
+
+          if (Capacitor.getPlatform() === 'android' && techTypes.includes(NfcTagTechType.IsoDep)) {
+            await Nfc.connect({ techType: NfcTagTechType.IsoDep });
+
+            const selectResponse = await transceive('00A4040007F001020304050600');
+            if (!selectResponse.endsWith('9000')) throw new Error('Card selection failed');
+
+            let walletHex = '';
+            let response = await transceive('0047000000');
+
+            while (response.slice(-4, -2) === '61') {
+              walletHex += response.slice(0, -4);
+              response = await transceive(`00C00000${response.slice(-2)}`);
+            }
+
+            walletHex += response.slice(0, -4);
+            const wallet = hexToString(walletHex);
+
+            if (wallet) {
+              setWalletAddress(wallet);
+              console.log("log ~ :50 ~ readCard ~ wallet:", wallet)
+              setToastMessage('✅ Wallet address received!');
+              const saltId = 'TcFgFve06VR3ghSLZMrOOhPNi7ncF2BHAx8KFilzmIg';
+              // await dispatch(fetchSmartWalletFee({ saltId, publicKey: wallet }));
+            } else {
+              throw new Error('No wallet address data');
+            }
+
+            await Nfc.close();
+          } else {
+            throw new Error('Unsupported NFC type');
+          }
+        } catch (err: any) {
+          setToastMessage(`❌ ${err.message}`);
+        }
+
         setShowToast(true);
-        return;
-      }
-
-      // Store public key data for HCE service
-      await Preferences.set({
-        key: "public_key_data",
-        value: publicKeyData,
+        setScanning(false);
       });
 
-      // Set up HCE listeners
-      await Nfc.addListener("commandReceived", async (event) => {
-        setConnectionStatus("User device connected - Sharing public key...");
-      });
-
-      await Nfc.addListener("nfcLinkDeactivated", (event) => {
-        setConnectionStatus("Public key shared successfully!");
-        setToastMessage("✅ Public key transferred!");
-        setShowToast(true);
-        setTimeout(() => {
-          setConnectionStatus("Ready to share public key");
-        }, 2000);
-      });
-
-      setIsHCEActive(true);
-      setConnectionStatus("HCE Active - Ready to share public key");
-      setToastMessage("📡 Ready to share public key via NFC");
+      await Nfc.startScanSession({ pollingOptions: [PollingOption.iso14443] });
+    } catch (err: any) {
+      setToastMessage(`❌ ${err.message}`);
       setShowToast(true);
-
-    } catch (error: any) {
-      setToastMessage(`❌ HCE failed: ${error.message}`);
-      setShowToast(true);
-      setIsHCEActive(false);
+      setScanning(false);
     }
   };
 
-  const stopHCE = async () => {
+  const transceive = async (hexCmd: string) => {
+    const cmd = hexCmd.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || [];
+    const response = await Nfc.transceive({ data: cmd });
+    return response.response.map((byte: number) => byte.toString(16).padStart(2, '0')).join('');
+  };
+
+  const hexToString = (hex: string) => {
     try {
-      await Nfc.removeAllListeners();
-      setIsHCEActive(false);
-      setConnectionStatus("Ready to share public key");
-      setToastMessage("🛑 HCE stopped");
-      setShowToast(true);
-    } catch (error: any) {
-      setToastMessage(`❌ Error stopping HCE: ${error.message}`);
-      setShowToast(true);
+      return decodeURIComponent(hex.match(/.{1,2}/g)?.map(byte => '%' + byte).join('') || '');
+    } catch {
+      return '';
     }
+  };
+
+  const handleSubmit = async () => {
+    if (!walletAddress || !amount) {
+      setToastMessage('❗ Please scan card and enter amount');
+      setShowToast(true);
+      return;
+    }
+
+    try {
+      await dispatch(buildPayment({
+        wallet_address: walletAddress,
+        from: walletAddress, // Adjust 'from' as needed
+        amount: amount,
+      }) as any);
+      setToastMessage('✅ Payment request sent!');
+    } catch (err: any) {
+      setToastMessage(`❌ ${err.message || 'Payment failed'}`);
+    }
+    setShowToast(true);
   };
 
   return (
     <IonPage>
       <IonHeader>
         <IonToolbar>
-          <IonTitle>Merchant - Public Key Sharing</IonTitle>
+          <IonTitle>Merchant</IonTitle>
         </IonToolbar>
       </IonHeader>
       <IonContent className="ion-padding">
-        <IonCard>
-          <IonCardHeader>
-            <IonCardTitle>Share Public Key via NFC</IonCardTitle>
-          </IonCardHeader>
-          <IonCardContent>
-            <IonItem>
-              <IonLabel position="floating">Public Key Data</IonLabel>
-              <IonTextarea
-                value={publicKeyData}
-                onIonChange={(e) => setPublicKeyData(e.detail.value!)}
-                placeholder="Enter public key data"
-                rows={8}
-                style={{ fontFamily: 'monospace', fontSize: '12px' }}
-              />
-            </IonItem>
+        <IonButton expand="block" onClick={readCard} disabled={scanning}>
+          {scanning ? 'Scanning...' : 'Scan Wallet via NFC'}
+        </IonButton>
 
-            <IonButton 
-              expand="block" 
-              onClick={isHCEActive ? stopHCE : startHCE}
-              color={isHCEActive ? "danger" : "primary"}
-              className="ion-margin-top"
-            >
-              {isHCEActive ? "Stop NFC Sharing" : "Start NFC Sharing"}
-            </IonButton>
+        {walletAddress && (
+          <p><strong>Wallet Address:</strong> {walletAddress}</p>
+        )}
 
-            <div style={{ marginTop: "20px", textAlign: "center" }}>
-              <IonText color={isHCEActive ? "success" : "medium"}>
-                <p><strong>Status:</strong> {connectionStatus}</p>
-              </IonText>
+        <IonItem>
+          <IonLabel position="floating">Enter Amount</IonLabel>
+          <IonInput
+            type="number"
+            value={amount}
+            onIonChange={(e) => setAmount(e.detail.value!)}
+          />
+        </IonItem>
 
-              {isHCEActive && (
-                <IonText color="primary">
-                  <p style={{ fontSize: "14px", marginTop: "10px" }}>
-                    📱 Hold the user's device near this phone
-                  </p>
-                  <p style={{ fontSize: "12px", color: "#666" }}>
-                    No authentication required - Direct access
-                  </p>
-                </IonText>
-              )}
-            </div>
+        <IonButton expand="block" color="success" onClick={handleSubmit} disabled={loading}>
+          {loading ? 'Processing...' : 'Submit'}
+        </IonButton>
 
-            {publicKeyData && (
-              <div style={{ 
-                marginTop: "20px", 
-                padding: "15px", 
-                backgroundColor: "#f0f8ff", 
-                borderRadius: "8px" 
-              }}>
-                <IonText color="primary">
-                  <p><strong>Public Key Preview:</strong></p>
-                  <pre style={{ 
-                    fontSize: "10px", 
-                    wordBreak: "break-all",
-                    whiteSpace: "pre-wrap",
-                    maxHeight: "150px",
-                    overflow: "auto",
-                    backgroundColor: "white",
-                    padding: "10px",
-                    borderRadius: "4px",
-                    border: "1px solid #ddd"
-                  }}>
-                    {publicKeyData}
-                  </pre>
-                  <p style={{ fontSize: "10px", color: "#666", marginTop: "5px" }}>
-                    Length: {publicKeyData.length} characters
-                  </p>
-                </IonText>
-              </div>
-            )}
-          </IonCardContent>
-        </IonCard>
+        {error && <p style={{ color: 'red' }}>Error: {error}</p>}
+        {buildPaymentResult && (
+          <div style={{ marginTop: '1em', background: '#e3ffe3', padding: '1em', borderRadius: '8px' }}>
+            <p><strong>AuthTxn:</strong> {buildPaymentResult.authTxn}</p>
+            <p><strong>AuthHash:</strong> {buildPaymentResult.authHash}</p>
+            <p><strong>LastLedger:</strong> {buildPaymentResult.lastLedger}</p>
+          </div>
+        )}
 
         <IonToast
           isOpen={showToast}
+          onDidDismiss={() => setShowToast(false)}
           message={toastMessage}
           duration={3000}
-          onDidDismiss={() => setShowToast(false)}
         />
       </IonContent>
     </IonPage>

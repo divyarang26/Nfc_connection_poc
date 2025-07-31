@@ -12,7 +12,6 @@ import {
 import { IonReactRouter } from '@ionic/react-router';
 import { ellipse, square, triangle } from 'ionicons/icons';
 import Merchant from './pages/Merchant';
-import User from './pages/User';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -54,9 +53,7 @@ const App: React.FC = () => (
           <Route exact path="/tab1">
             <Merchant />
           </Route>
-          <Route path="/tab3">
-            <User />
-          </Route>
+         
           <Route exact path="/">
             <Redirect to="/tab1" />
           </Route>
