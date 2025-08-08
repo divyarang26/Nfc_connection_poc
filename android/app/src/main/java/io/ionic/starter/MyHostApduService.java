@@ -10,6 +10,7 @@ import org.json.JSONObject;
 import org.json.JSONException;
 
 public class MyHostApduService extends HostApduService {
+    
     private static final String TAG = "MyHostApduService";
 
     // AID for EbioroApplet (matching React app)

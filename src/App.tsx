@@ -12,7 +12,7 @@ import {
 import { IonReactRouter } from '@ionic/react-router';
 import { ellipse, square, triangle } from 'ionicons/icons';
 import Merchant from './pages/Merchant';
-import SendReceivePage from './pages/SendRecive';
+import CardPage from './pages/Card';
 
 
 /* Core CSS required for Ionic components to work properly */
@@ -56,7 +56,7 @@ const App: React.FC = () => (
             <Merchant />
           </Route>
           <Route exact path="/tab3">
-            <SendReceivePage />
+            <CardPage />
           </Route>
          
           <Route exact path="/">
