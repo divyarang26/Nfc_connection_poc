@@ -8,12 +8,12 @@
     <string name="servicedesc">NFC HCE Service for phone-to-phone communication</string>
     <string name="aiddescription">Custom AID for NFC data transfer</string>
      <string name="asset_statements">
-        [{
-            \"relation\": [\"delegate_permission/common.handle_all_urls\"],
-            \"target\": {
-                \"namespace\": \"android_app\",
-                \"site\": \"https://4a33-110-227-204-245.ngrok-free.app"
-            }
+    [{
+        \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+        \"target\": {
+            \"namespace\": \"android_app\",
+            \"site\": \"https://4a33-110-227-204-245.ngrok-free.app\"
         }
-        </string>
+    }]
+</string>
 </resources>

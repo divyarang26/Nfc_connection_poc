@@ -1,4 +1,3 @@
-
 package io.ionic.starter;
 
 import android.nfc.cardemulation.HostApduService;
@@ -13,7 +12,7 @@ import org.json.JSONException;
 public class MyHostApduService extends HostApduService {
     private static final String TAG = "MyHostApduService";
 
-    // AID for EbioroApplet (you'll need to replace with actual AID)
+    // AID for EbioroApplet (matching React app)
     private static final byte[] EBIORO_AID = HexStringToByteArray("F0010203040506");
     
     // EbioroApplet command codes
@@ -23,8 +22,9 @@ public class MyHostApduService extends HostApduService {
     private static final byte[] APDU_SUCCESS = {(byte)0x90, (byte)0x00};
     private static final byte[] APDU_UNKNOWN = {(byte)0x6F, (byte)0x00};
     private static final byte[] APDU_INCORRECT_P1P2 = {(byte)0x6A, (byte)0x86};
+    private static final byte[] APDU_WRONG_LENGTH = {(byte)0x67, (byte)0x00};
     
-    // Maximum chunk size for data transfer
+    // Maximum chunk size for data transfer (matching React app)
     private static final int MAX_CHUNK_SIZE = 250;
 
     // State tracking
@@ -38,6 +38,7 @@ public class MyHostApduService extends HostApduService {
         Log.d(TAG, "Received APDU: " + ByteArrayToHexString(commandApdu));
 
         if (commandApdu == null || commandApdu.length < 4) {
+            Log.w(TAG, "Invalid APDU received");
             return APDU_UNKNOWN;
         }
 
@@ -74,7 +75,7 @@ public class MyHostApduService extends HostApduService {
         Log.d(TAG, "SELECT command received");
         
         if (commandApdu.length > 5) {
-            int lc = commandApdu[4];
+            int lc = commandApdu[4] & 0xFF; // Convert to unsigned byte
             if (commandApdu.length >= 5 + lc) {
                 byte[] aid = Arrays.copyOfRange(commandApdu, 5, 5 + lc);
                 if (Arrays.equals(aid, EBIORO_AID)) {
@@ -90,6 +91,7 @@ public class MyHostApduService extends HostApduService {
         }
         
         isAppletSelected = false;
+        Log.w(TAG, "Invalid SELECT command or wrong AID");
         return APDU_UNKNOWN;
     }
 
@@ -98,14 +100,22 @@ public class MyHostApduService extends HostApduService {
         
         // Check P1 and P2
         if (commandApdu[2] != 0x00 || commandApdu[3] != 0x00) {
+            Log.w(TAG, "Incorrect P1P2 for GET PUBLIC KEY");
             return APDU_INCORRECT_P1P2;
         }
         
         // Prepare public key data for chunked transfer
         updatePublicKeyFromStorage();
+        
+        if (publicKeyData == null || publicKeyData.isEmpty()) {
+            Log.w(TAG, "No public key data available");
+            return APDU_UNKNOWN;
+        }
+        
         remainingData = publicKeyData.getBytes();
         currentOffset = 0;
         
+        Log.d(TAG, "Starting chunked transfer of " + remainingData.length + " bytes");
         return getNextChunk();
     }
 
@@ -114,6 +124,7 @@ public class MyHostApduService extends HostApduService {
      */
     private byte[] getNextChunk() {
         if (remainingData == null || currentOffset >= remainingData.length) {
+            Log.d(TAG, "No more data to send");
             return APDU_SUCCESS;
         }
 
@@ -149,7 +160,22 @@ public class MyHostApduService extends HostApduService {
 
     @Override
     public void onDeactivated(int reason) {
-        Log.d(TAG, "HCE Deactivated: " + reason);
+        String reasonText;
+        switch (reason) {
+            case DEACTIVATION_LINK_LOSS:
+                reasonText = "LINK_LOSS";
+                break;
+            case DEACTIVATION_DESELECTED:
+                reasonText = "DESELECTED";
+                break;
+            default:
+                reasonText = "UNKNOWN(" + reason + ")";
+                break;
+        }
+        
+        Log.d(TAG, "HCE Deactivated: " + reasonText);
+        
+        // Reset state
         isAppletSelected = false;
         remainingData = null;
         currentOffset = 0;
@@ -157,6 +183,7 @@ public class MyHostApduService extends HostApduService {
 
     /**
      * Reads the public key data from Capacitor's SharedPreferences
+     * This method is enhanced to handle both JSON and plain text data
      */
     private void updatePublicKeyFromStorage() {
         SharedPreferences prefs = getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
@@ -171,6 +198,7 @@ public class MyHostApduService extends HostApduService {
 
                     if (storedKey == null || storedKey.isEmpty()) {
                         Log.w(TAG, "'value' key missing or empty in JSON data.");
+                        // Fallback: treat the entire JSON as the data
                         if (!jsonData.isEmpty()) {
                             storedKey = jsonData;
                         }
@@ -178,9 +206,11 @@ public class MyHostApduService extends HostApduService {
                     Log.d(TAG, "Successfully parsed public key from storage, length: " + 
                               (storedKey != null ? storedKey.length() : 0));
                 } catch (JSONException e) {
-                    Log.w(TAG, "Stored data is not valid JSON, treating as plain string.");
+                    Log.w(TAG, "Stored data is not valid JSON, treating as plain string: " + e.getMessage());
                     storedKey = jsonData;
                 }
+            } else {
+                Log.w(TAG, "No data found in SharedPreferences");
             }
         } catch (Exception e) {
             Log.e(TAG, "Error retrieving public key from storage: " + e.getMessage());
@@ -190,16 +220,34 @@ public class MyHostApduService extends HostApduService {
             publicKeyData = storedKey;
             Log.d(TAG, "Updated public key data, length: " + publicKeyData.length());
         } else {
-            // Default public key data for demo
-            publicKeyData = "-----BEGIN PUBLIC KEY-----\n" +
-                           "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1234567890\n" +
-                           "EXAMPLE_PUBLIC_KEY_DATA_HERE_1234567890ABCDEF\n" +
-                           "-----END PUBLIC KEY-----";
+            // Default public key data for demo/testing
+            publicKeyData = createDefaultTestData();
+            Log.d(TAG, "Using default test data, length: " + publicKeyData.length());
         }
     }
 
     /**
-     * Converts a byte array to a hexadecimal string
+     * Creates default test data when no data is available
+     */
+    private String createDefaultTestData() {
+        return "{\n" +
+               "  \"type\": \"default-test-data\",\n" +
+               "  \"message\": \"No data was found in storage. This is default test data from the HCE service.\",\n" +
+               "  \"timestamp\": \"" + System.currentTimeMillis() + "\",\n" +
+               "  \"source\": \"Android HCE Service\",\n" +
+               "  \"publicKey\": \"-----BEGIN PUBLIC KEY-----\\n" +
+               "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1234567890\\n" +
+               "EXAMPLE_PUBLIC_KEY_DATA_HERE_FOR_TESTING_PURPOSES\\n" +
+               "-----END PUBLIC KEY-----\",\n" +
+               "  \"metadata\": {\n" +
+               "    \"version\": \"1.0.0\",\n" +
+               "    \"service\": \"MyHostApduService\"\n" +
+               "  }\n" +
+               "}";
+    }
+
+    /**
+     * Converts a byte array to a hexadecimal string for logging
      */
     public static String ByteArrayToHexString(byte[] bytes) {
         if (bytes == null) return "null";
@@ -215,11 +263,21 @@ public class MyHostApduService extends HostApduService {
      * Converts a hexadecimal string to a byte array
      */
     public static byte[] HexStringToByteArray(String s) {
+        if (s == null || s.length() % 2 != 0) {
+            Log.w(TAG, "Invalid hex string: " + s);
+            return new byte[0];
+        }
+        
         int len = s.length();
         byte[] data = new byte[len / 2];
-        for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
-                            + Character.digit(s.charAt(i+1), 16));
+        try {
+            for (int i = 0; i < len; i += 2) {
+                data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
+                                + Character.digit(s.charAt(i+1), 16));
+            }
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "Error converting hex string to byte array: " + e.getMessage());
+            return new byte[0];
         }
         return data;
     }

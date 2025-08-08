@@ -12,6 +12,8 @@ import {
 import { IonReactRouter } from '@ionic/react-router';
 import { ellipse, square, triangle } from 'ionicons/icons';
 import Merchant from './pages/Merchant';
+import SendReceivePage from './pages/SendRecive';
+
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -53,6 +55,9 @@ const App: React.FC = () => (
           <Route exact path="/tab1">
             <Merchant />
           </Route>
+          <Route exact path="/tab3">
+            <SendReceivePage />
+          </Route>
          
           <Route exact path="/">
             <Redirect to="/tab1" />
@@ -65,7 +70,7 @@ const App: React.FC = () => (
           </IonTabButton>
           <IonTabButton tab="tab3" href="/tab3">
             <IonIcon aria-hidden="true" icon={square} />
-            <IonLabel>user</IonLabel>
+            <IonLabel>nfc</IonLabel>
           </IonTabButton>
         </IonTabBar>
       </IonTabs>
