@@ -15,23 +15,21 @@ import {
   IonCardTitle,
   IonItem,
   IonLabel,
-  IonInput,
-  IonSegment,
-  IonSegmentButton,
+  IonIcon,
 } from '@ionic/react';
+import { keyOutline, checkmarkCircleOutline, alertCircleOutline } from 'ionicons/icons';
 import { Nfc, NfcTagTechType, PollingOption } from '@capawesome-team/capacitor-nfc';
 import { Capacitor } from '@capacitor/core';
 
-// User Device - Reads data from merchant's EbioroApplet HCE
+// User Device - Reads public key from merchant's EbioroApplet HCE
 const User: React.FC = () => {
-  const [receivedData, setReceivedData] = useState('');
+  const [receivedPublicKey, setReceivedPublicKey] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const [showToast, setShowToast] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('');
   const [dataProgress, setDataProgress] = useState('');
-  const [pin, setPin] = useState('123456');
-  const [operation, setOperation] = useState<'sign' | 'getkey'>('sign');
+  const [keyFormat, setKeyFormat] = useState<'unknown' | 'pem' | 'jwk' | 'raw'>('unknown');
 
   useEffect(() => {
     return () => {
@@ -42,26 +40,11 @@ const User: React.FC = () => {
     };
   }, [isScanning]);
 
-  // EbioroApplet APDU commands
+  // Simplified EbioroApplet APDU commands (no PIN required)
   const APDU_COMMANDS = {
     SELECT_AID: (aid: string) => {
       const aidBytes = hexToArray(aid);
       return [0x00, 0xA4, 0x04, 0x00, aidBytes.length, ...aidBytes, 0x00];
-    },
-    VERIFY_PIN: (pinDigits: string) => {
-      const pinBytes = Array.from(pinDigits).map(d => 0x30 + parseInt(d));
-      return [0x00, 0x20, 0x00, 0x01, 0x06, ...pinBytes, 0x00];
-    },
-    MANAGE_SECURITY_ENV_SIGN: () => {
-      // Set algorithm and key for signature (P1=0x41, P2=0xB6)
-      // TLV: 80 01 EC (Algorithm: EC) 84 01 00 (Key slot: 0)
-      return [0x00, 0x22, 0x41, 0xB6, 0x06, 0x80, 0x01, 0xEC, 0x84, 0x01, 0x00, 0x00];
-    },
-    PERFORM_SIGN: () => {
-      // Sign operation (P1=0x9E, P2=0x9A)
-      // In real use, this would include a 32-byte hash
-      const dummyHash = new Array(32).fill(0x00);
-      return [0x00, 0x2A, 0x9E, 0x9A, 0x20, ...dummyHash, 0x00];
     },
     GET_PUBLIC_KEY: () => {
       return [0x00, 0x47, 0x00, 0x00, 0x00];
@@ -71,24 +54,19 @@ const User: React.FC = () => {
     }
   };
 
-  // Read data from merchant's EbioroApplet HCE
-  const readData = async () => {
+  // Read public key from merchant's EbioroApplet HCE
+  const readPublicKey = async () => {
     try {
-      if (pin.length !== 6) {
-        setToastMessage('⚠️ PIN must be exactly 6 digits');
-        setShowToast(true);
-        return;
-      }
-
       setIsScanning(true);
-      setConnectionStatus('Starting NFC scan...');
-      setReceivedData('');
+      setConnectionStatus('Starting NFC scan for public key...');
+      setReceivedPublicKey('');
       setDataProgress('');
+      setKeyFormat('unknown');
 
       await Nfc.removeAllListeners();
 
       await Nfc.addListener('nfcTagScanned', async (event) => {
-        setConnectionStatus('EbioroApplet detected! Authenticating...');
+        setConnectionStatus('EbioroApplet detected! Reading public key...');
 
         try {
           await Nfc.stopScanSession();
@@ -100,69 +78,31 @@ const User: React.FC = () => {
             await Nfc.connect({ techType: NfcTagTechType.IsoDep });
 
             // 1. Select EbioroApplet
-            setDataProgress('Selecting applet...');
+            setDataProgress('Selecting EbioroApplet...');
             const selectResponse = await Nfc.transceive({ 
               data: APDU_COMMANDS.SELECT_AID('F0010203040506') 
             });
             
             if (!checkResponse(selectResponse, 'SELECT')) {
-              throw new Error('Failed to select applet');
+              throw new Error('Failed to select EbioroApplet');
             }
 
-            // 2. Verify PIN
-            setDataProgress('Verifying PIN...');
-            const verifyResponse = await Nfc.transceive({ 
-              data: APDU_COMMANDS.VERIFY_PIN(pin) 
+            // 2. Get Public Key (No PIN verification needed!)
+            setDataProgress('Requesting public key...');
+            const keyResponse = await Nfc.transceive({ 
+              data: APDU_COMMANDS.GET_PUBLIC_KEY() 
             });
             
-            if (!checkResponse(verifyResponse, 'VERIFY PIN')) {
-              const sw1 = verifyResponse.response[verifyResponse.response.length - 2];
-              const sw2 = verifyResponse.response[verifyResponse.response.length - 1];
-              if (sw1 === 0x63) {
-                const triesLeft = sw2 & 0x0F;
-                throw new Error(`Wrong PIN! ${triesLeft} tries remaining`);
-              }
-              throw new Error('PIN verification failed');
-            }
+            const publicKeyData = await readAllChunks(keyResponse, 'Public Key');
+            console.log("log ~ :97 ~ readPublicKey ~ publicKeyData:", publicKeyData)
 
-            // 3. Perform selected operation
-            let finalData = '';
-            
-            if (operation === 'sign') {
-              // Set security environment for signature
-              setDataProgress('Setting security environment...');
-              const secEnvResponse = await Nfc.transceive({ 
-                data: APDU_COMMANDS.MANAGE_SECURITY_ENV_SIGN() 
-              });
-              
-              if (!checkResponse(secEnvResponse, 'MANAGE SECURITY ENV')) {
-                throw new Error('Failed to set security environment');
-              }
-
-              // Perform signature
-              setDataProgress('Performing signature...');
-              const signResponse = await Nfc.transceive({ 
-                data: APDU_COMMANDS.PERFORM_SIGN() 
-              });
-              
-              finalData = await readAllChunks(signResponse, 'Signature');
-              
+            if (publicKeyData) {
+              setReceivedPublicKey(publicKeyData);
+              setKeyFormat(detectKeyFormat(publicKeyData));
+              setConnectionStatus('Public key received successfully!');
+              setToastMessage('✅ Public key received from EbioroApplet!');
             } else {
-              // Get public key
-              setDataProgress('Getting public key...');
-              const keyResponse = await Nfc.transceive({ 
-                data: APDU_COMMANDS.GET_PUBLIC_KEY() 
-              });
-              
-              finalData = await readAllChunks(keyResponse, 'Public Key');
-            }
-
-            if (finalData) {
-              setReceivedData(finalData);
-              setConnectionStatus(`${operation === 'sign' ? 'Signature' : 'Public Key'} received successfully!`);
-              setToastMessage(`✅ ${operation === 'sign' ? 'Signature' : 'Public Key'} received from EbioroApplet!`);
-            } else {
-              setToastMessage('⚠️ No data received from applet');
+              setToastMessage('⚠️ No public key data received');
               setConnectionStatus('No data found');
             }
 
@@ -262,6 +202,39 @@ const User: React.FC = () => {
     return '';
   };
 
+  // Detect the format of the received public key
+  const detectKeyFormat = (keyData: string): 'pem' | 'jwk' | 'raw' | 'unknown' => {
+    const trimmed = keyData.trim();
+    
+    if (trimmed.startsWith('-----BEGIN') && trimmed.endsWith('-----')) {
+      return 'pem';
+    } else if (trimmed.startsWith('{') && trimmed.includes('"kty"')) {
+      return 'jwk';
+    } else if (trimmed.length > 50 && /^[A-Za-z0-9+/=\s]+$/.test(trimmed)) {
+      return 'raw';
+    }
+    
+    return 'unknown';
+  };
+
+  const getFormatIcon = () => {
+    switch (keyFormat) {
+      case 'pem': return checkmarkCircleOutline;
+      case 'jwk': return checkmarkCircleOutline;
+      case 'raw': return alertCircleOutline;
+      default: return keyOutline;
+    }
+  };
+
+  const getFormatColor = () => {
+    switch (keyFormat) {
+      case 'pem': return 'success';
+      case 'jwk': return 'success';
+      case 'raw': return 'warning';
+      default: return 'medium';
+    }
+  };
+
   const hexToArray = (hex: string): number[] => {
     const result = [];
     for (let i = 0; i < hex.length; i += 2) {
@@ -285,49 +258,41 @@ const User: React.FC = () => {
     }
   };
 
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(receivedPublicKey);
+      setToastMessage('📋 Public key copied to clipboard!');
+      setShowToast(true);
+    } catch (error) {
+      setToastMessage('❌ Failed to copy to clipboard');
+      setShowToast(true);
+    }
+  };
+
   return (
     <IonPage>
       <IonHeader>
         <IonToolbar>
-          <IonTitle>User Device (EbioroApplet Reader)</IonTitle>
+          <IonTitle>User Device (Public Key Reader)</IonTitle>
         </IonToolbar>
       </IonHeader>
       <IonContent className="ion-padding">
         <IonCard>
           <IonCardHeader>
-            <IonCardTitle>Read from EbioroApplet HCE</IonCardTitle>
+            <IonCardTitle>
+              <IonIcon icon={keyOutline} style={{ marginRight: '8px' }} />
+              Read Public Key from EbioroApplet
+            </IonCardTitle>
           </IonCardHeader>
           <IonCardContent>
-            <IonItem>
-              <IonLabel position="floating">PIN (6 digits)</IonLabel>
-              <IonInput
-                value={pin}
-                onIonChange={(e) => setPin(e.detail.value!)}
-                placeholder="123456"
-                maxlength={6}
-                type="number"
-              />
-            </IonItem>
-
-            <IonSegment 
-              value={operation} 
-              onIonChange={e => setOperation(e.detail.value as 'sign' | 'getkey')}
-              className="ion-margin-vertical"
-            >
-              <IonSegmentButton value="sign">
-                <IonLabel>Digital Signature</IonLabel>
-              </IonSegmentButton>
-              <IonSegmentButton value="getkey">
-                <IonLabel>Get Public Key</IonLabel>
-              </IonSegmentButton>
-            </IonSegment>
-
             <IonButton 
               expand="block" 
-              onClick={isScanning ? stopReading : readData}
+              onClick={isScanning ? stopReading : readPublicKey}
               color={isScanning ? 'danger' : 'primary'}
+              size="large"
             >
-              {isScanning ? 'Stop Reading' : `Read ${operation === 'sign' ? 'Signature' : 'Public Key'}`}
+              <IonIcon icon={keyOutline} slot="start" />
+              {isScanning ? 'Stop Reading' : 'Read Public Key'}
             </IonButton>
 
             {connectionStatus && (
@@ -342,37 +307,78 @@ const User: React.FC = () => {
               </IonText>
             )}
 
-            {receivedData && (
-              <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#e8f5e9', borderRadius: '8px' }}>
-                <IonText color="success">
-                  <h4>{operation === 'sign' ? 'Digital Signature' : 'Public Key'} Received</h4>
-                  <p style={{ 
-                    fontSize: '14px', 
+            {receivedPublicKey && (
+              <div style={{ marginTop: '20px' }}>
+                <IonItem>
+                  <IonIcon icon={getFormatIcon()} color={getFormatColor()} slot="start" />
+                  <IonLabel>
+                    <h3>Public Key Received</h3>
+                    <p>Format: {keyFormat.toUpperCase()} | Size: {receivedPublicKey.length} chars</p>
+                  </IonLabel>
+                </IonItem>
+
+                <div style={{ 
+                  marginTop: '15px', 
+                  padding: '15px', 
+                  backgroundColor: '#e8f5e9', 
+                  borderRadius: '8px' 
+                }}>
+                  <div style={{ 
+                    fontSize: '12px', 
                     wordBreak: 'break-all', 
                     backgroundColor: 'white', 
-                    padding: '10px', 
+                    padding: '15px', 
                     borderRadius: '4px',
                     border: '1px solid #ddd',
                     maxHeight: '300px',
                     overflow: 'auto',
-                    fontFamily: 'monospace'
+                    fontFamily: 'monospace',
+                    lineHeight: '1.4'
                   }}>
-                    {receivedData}
-                  </p>
-                  <p style={{ fontSize: '12px', marginTop: '10px', color: '#666' }}>
-                    Length: {receivedData.length} characters
-                  </p>
-                </IonText>
+                    {receivedPublicKey}
+                  </div>
+
+                  <IonButton 
+                    fill="outline" 
+                    expand="block" 
+                    onClick={copyToClipboard}
+                    style={{ marginTop: '15px' }}
+                  >
+                    📋 Copy to Clipboard
+                  </IonButton>
+                </div>
               </div>
             )}
 
-            <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '8px' }}>
-              <IonText color="primary" style={{ fontSize: '14px' }}>
-                <p><strong>Instructions:</strong></p>
-                <p>1. Make sure the merchant device has HCE activated</p>
-                <p>2. Enter the same PIN as configured on merchant</p>
-                <p>3. Select operation type (Signature or Public Key)</p>
-                <p>4. Hold phones back-to-back to connect</p>
+            <div style={{ 
+              marginTop: '20px', 
+              padding: '15px', 
+              backgroundColor: '#f0f8ff', 
+              borderRadius: '8px' 
+            }}>
+              <IonText color="primary">
+                <p><strong>✨ Simplified Process:</strong></p>
+                <p style={{ fontSize: '14px' }}>
+                  1. Hold phones back-to-back to connect
+                  <br />2. EbioroApplet automatically selected
+                  <br />3. Public key retrieved instantly (no PIN needed!)
+                  <br />4. Supports chunked transfer for large keys
+                </p>
+              </IonText>
+            </div>
+
+            <div style={{ 
+              marginTop: '15px', 
+              padding: '15px', 
+              backgroundColor: '#fff3cd', 
+              borderRadius: '8px' 
+            }}>
+              <IonText color="warning">
+                <p><strong>🔒 Security Note:</strong></p>
+                <p style={{ fontSize: '12px' }}>
+                  Public keys don't require authentication as they are meant to be shared.
+                  Private operations (like signing) would still require PIN verification.
+                </p>
               </IonText>
             </div>
           </IonCardContent>
@@ -380,7 +386,7 @@ const User: React.FC = () => {
 
         <IonLoading 
           isOpen={isScanning} 
-          message="Hold phones back-to-back to read from EbioroApplet..." 
+          message="Hold phones back-to-back to read public key..." 
         />
         
         <IonToast

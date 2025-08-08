@@ -250,11 +250,11 @@ public class MyHostApduService extends HostApduService {
     private byte[] handleGetPublicKey(byte[] commandApdu) {
         Log.d(TAG, "GET PUBLIC KEY command received");
         
-        if (!isPinVerified) {
-            return APDU_SECURITY_NOT_SATISFIED;
-        }
+        // REMOVED PIN VERIFICATION REQUIREMENT FOR PUBLIC KEY ACCESS
+        // Public keys are typically considered public information and don't require authentication
+        Log.d(TAG, "Returning public key data without PIN verification");
         
-        // In this simplified version, return the stored message as "public key data"
+        // Get the stored message (public key data) from storage
         updateCurrentNfcMessageFromStorage();
         remainingData = currentNfcMessage.getBytes();
         currentOffset = 0;
@@ -344,7 +344,8 @@ public class MyHostApduService extends HostApduService {
             currentNfcMessage = storedMessage;
             Log.d(TAG, "Updated NFC message, length: " + currentNfcMessage.length());
         } else {
-            currentNfcMessage = "NFC Data Transferred Successfully!";
+            // Default public key data if no custom data is stored
+            currentNfcMessage = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0vx7agoebGcQSuuPiLJXZptN9nndrQmbPFRP1gPd0Ajtxz1E6TRIb1RJ0ZRb0vI8Z8TRtgJ8EWIZhOI2JfUBb2tONm0Z\n-----END PUBLIC KEY-----";
         }
     }
 
