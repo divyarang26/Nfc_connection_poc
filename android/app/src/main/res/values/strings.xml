@@ -5,8 +5,8 @@
     <string name="title_activity_main">Your App Name</string>
     <string name="package_name">io.ionic.starter</string>
     <string name="custom_url_scheme">io.ionic.starter</string>
-    <string name="servicedesc">NFC HCE Service for phone-to-phone communication</string>
-    <string name="aiddescription">Custom AID for NFC data transfer</string>
+    <string name="servicedesc">PoC HCE service</string>
+<string name="aiddescription">PoC AID</string>
      <string name="asset_statements">
         [{
             \"relation\": [\"delegate_permission/common.handle_all_urls\"],
